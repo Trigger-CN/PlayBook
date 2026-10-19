@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Playbook 个人内容站 - 后台分析页设计 Demo（noindex）">
+  <meta name="robots" content="noindex,nofollow">
+  <title>分析 - Playbook 后台</title>
+  <style>
+    :root{--canvas:#fffdf8;--ink:#211522;--muted:#765f73;--line:rgba(72,42,62,.12);--surface:#fff;--soft:#fff0e6;--coral:#ff656c;--coral-base:#72002f;--pink:#f58bc5;--pink-base:#9b078b;--cream:#ffe5c5;--cream-base:#b78122;--mint:#82e2bf;--mint-base:#146044;--sky:#8dd1ff;--sky-base:#1c6199;--lilac:#e989ee;--lilac-base:#90009d;--shell:#ffc9cb;--grid:rgba(72,42,62,.08);--shadow:0 9px 0 rgba(114,0,47,.13)}
+    [data-theme=night]{--canvas:#21162c;--ink:#fff9f1;--muted:#cdbbd0;--line:rgba(255,230,204,.14);--surface:#31223d;--soft:#3e2b4a;--coral:#ff7379;--coral-base:#5a082e;--pink:#e995d8;--pink-base:#70106e;--cream:#ffdfaa;--cream-base:#76511d;--mint:#7fe0bd;--mint-base:#104934;--sky:#82c7f2;--sky-base:#153e6e;--lilac:#d49aff;--lilac-base:#4b246e;--shell:#4a304f;--grid:rgba(255,230,204,.08);--shadow:0 9px 0 rgba(15,6,21,.3)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background-color:var(--canvas);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:32px 32px;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Noto Sans SC",sans-serif;transition:background-color .25s,color .25s}button,input,textarea,select{font:inherit}button{color:inherit}a{color:inherit;text-decoration:none}
+    :focus-visible{outline:4px solid var(--sky);outline-offset:4px}
+    .shell{display:grid;grid-template-columns:216px 1fr;min-height:100vh}
+    .side{display:flex;flex-direction:column;gap:6px;padding:22px 16px;border-right:1px solid var(--line);background:color-mix(in srgb,var(--surface) 72%,transparent)}
+    .brand{display:inline-flex;align-items:center;gap:10px;margin:0 6px 22px;font-family:Georgia,"Noto Serif SC",serif;font-size:19px;font-weight:700}.mark{width:30px;height:30px;display:grid;place-items:center;border-radius:10px;background:var(--coral);box-shadow:0 5px 0 var(--coral-base);transform:rotate(-7deg)}.mark i{display:block;width:12px;height:12px;border:3px solid var(--ink);border-radius:50%}
+    .nav-item{position:relative;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;padding:0 0 6px;border:0;border-radius:13px;cursor:pointer;background:var(--line);text-align:left}
+    .nav-item>span{display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;border-radius:inherit;background:var(--soft);transform:translateY(-6px);transition:transform .1s,filter .12s;font-size:13.5px;font-weight:750;color:var(--muted)}
+    .nav-item:hover>span{transform:translateY(-8px);filter:brightness(1.02)}
+    .nav-item:active>span{transform:translateY(-1px)}
+    .nav-item[aria-current=page]>span{background:var(--coral);color:#fff}
+    .badge{padding:2px 8px;border-radius:99px;background:var(--pink);color:#341624;font-size:10.5px;font-weight:900}
+    .nav-item[aria-current=page] .badge{background:var(--cream);color:#42220e}
+    .side-foot{margin-top:auto;padding:12px 8px 0;border-top:1px solid var(--line);color:var(--muted);font-size:11px;font-weight:700;line-height:1.8}.side-foot a{color:var(--muted)}.side-foot a:hover{color:var(--ink)}
+    .main{padding:0 30px 56px;min-width:0}
+    .topbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0 14px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--canvas) 88%,transparent);backdrop-filter:blur(4px)}
+    .topbar h1{margin:0;font-family:Georgia,"Noto Serif SC",serif;font-size:24px}.topbar .sub{color:var(--muted);font-size:12px;font-weight:700;margin-top:3px}
+    .top-actions{display:flex;align-items:center;gap:14px}
+    .menu-btn{display:none;position:relative;width:46px;height:46px;padding:0 0 5px;border:0;border-radius:12px;cursor:pointer;background:var(--coral-base)}.menu-btn span{display:grid;place-items:center;width:100%;height:100%;border-radius:inherit;background:var(--coral);transform:translateY(-5px);font-size:17px;font-weight:900;color:#fff;transition:transform .1s}.menu-btn:active span{transform:translateY(-1px)}
+    .toggle{position:relative;width:74px;height:39px;padding:0;border:0;border-radius:99px;cursor:pointer;background:transparent}.toggle:before{content:"";position:absolute;inset:6px 0 0;border-radius:inherit;background:var(--pink-base)}.toggle-top{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:4px 8px;border-radius:inherit;color:#28152b;background:var(--pink);transition:transform .12s}.knob{width:27px;height:27px;border-radius:50%;background:var(--cream);box-shadow:inset -3px -3px 0 rgba(100,61,0,.12);transition:transform .2s}[data-theme=night] .knob{transform:translateX(27px)}.toggle:active .toggle-top{transform:translateY(5px)}
+    .view-btn{position:relative;min-height:42px;padding:0 0 7px;border:0;border-radius:13px;cursor:pointer;background:var(--sky-base)}.view-btn span{display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:0 15px;border-radius:inherit;background:var(--sky);transform:translateY(-7px);font-size:12.5px;font-weight:850;color:#15344e;transition:transform .1s}.view-btn:hover span{transform:translateY(-9px)}.view-btn:active span{transform:translateY(-1px)}
+    .avatar-btn{display:grid;place-items:center;width:42px;height:42px;border:0;border-radius:50%;cursor:pointer;background:var(--mint);box-shadow:0 5px 0 var(--mint-base);font-size:13px;font-weight:900;color:#0d3826;transform:translateY(-5px);transition:transform .1s}.avatar-btn:hover{transform:translateY(-7px)}.avatar-btn:active{transform:translateY(0)}
+    .button{--cap:var(--coral);--base:var(--coral-base);position:relative;display:inline-grid;min-height:52px;place-items:center;padding:0 0 8px;border:0;border-radius:16px;cursor:pointer;background:var(--base);font-weight:850}.button>span{display:inline-flex;align-items:center;justify-content:center;gap:9px;width:100%;min-height:52px;padding:0 21px;border-radius:inherit;background:var(--cap);transform:translateY(-8px);transition:transform .11s,filter .15s}.button:hover>span{transform:translateY(-11px);filter:brightness(1.035) saturate(1.05)}.button:active>span{transform:translateY(-2px)}.button.cream{--cap:var(--cream);--base:var(--cream-base);color:#42220e}.button.small{min-height:42px;padding:0 0 7px;border-radius:13px;font-size:13px}.button.small>span{min-height:42px;padding:0 14px;transform:translateY(-7px)}.button.small:hover>span{transform:translateY(-9px)}.button.small:active>span{transform:translateY(-1px)}
+    /* 分析页 */
+    .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:13px;margin-top:24px;padding:15px 18px;border:1px solid var(--line);border-radius:18px;background:var(--surface)}
+    .toolbar .spacer{flex:1}
+    .chip{--chip-cap:var(--cream);--chip-base:var(--cream-base);padding:8px 13px;border:0;border-radius:999px;cursor:pointer;background:var(--chip-cap);box-shadow:0 5px 0 var(--chip-base);color:#432b1b;font-size:12px;font-weight:800;transform:translateY(-5px);transition:transform .11s,box-shadow .11s,filter .15s}.chip:hover{transform:translateY(-7px);box-shadow:0 7px 0 var(--chip-base);filter:brightness(1.03)}.chip:active{transform:translateY(-1px);box-shadow:0 1px 0 var(--chip-base)}.chip[aria-pressed=true]{--chip-cap:var(--pink);--chip-base:var(--pink-base);color:#341624}
+    .toolbar .updated{color:var(--muted);font-size:11.5px;font-weight:750}
+    .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:22px}
+    .kpi{position:relative;overflow:hidden;padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--soft)}.kpi:after{content:"";position:absolute;right:-16px;bottom:-20px;width:64px;height:64px;border-radius:50%;background:var(--coral);opacity:.35}.kpi:nth-child(2):after{background:var(--mint)}.kpi:nth-child(3):after{background:var(--sky)}.kpi:nth-child(4):after{background:var(--lilac)}.kpi span{display:block;position:relative;z-index:1;font-family:Georgia,serif;font-size:27px;font-weight:800}.kpi small{display:block;position:relative;z-index:1;margin-top:8px;color:var(--muted);font-size:11.5px;font-weight:750}
+    .chart{padding:22px;border:1px solid var(--line);border-radius:20px;background:var(--surface)}
+    .chart h3{margin:0 0 5px;font-size:15.5px}.chart .desc{margin:0 0 16px;color:var(--muted);font-size:12px;font-weight:700}
+    .bars{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;align-items:end;gap:9px;height:170px}
+    .bar-col{display:flex;flex-direction:column;justify-content:flex-end;gap:5px;height:100%;text-align:center}
+    .bar{border-radius:7px 7px 3px 3px;background:var(--coral);min-height:5px;box-shadow:0 4px 0 var(--coral-base)}
+    .bar.mint{background:var(--mint);box-shadow:0 4px 0 var(--mint-base)}
+    .bar-label{color:var(--muted);font-size:9.5px;font-weight:800}
+    .legend{display:flex;gap:16px;margin-top:12px;color:var(--muted);font-size:11px;font-weight:750}.legend i{display:inline-block;width:10px;height:10px;border-radius:4px;margin-right:5px;vertical-align:-1px}
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px}
+    .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
+    table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:480px}
+    th{padding:10px 14px;background:var(--soft);text-align:left;font-size:11px;white-space:nowrap}
+    td{padding:10px 14px;border-top:1px solid var(--line);white-space:nowrap}
+    .trend-up{color:var(--mint-base);font-weight:850}[data-theme=night] .trend-up{color:var(--mint)}
+    .trend-down{color:var(--coral-base);font-weight:850}[data-theme=night] .trend-down{color:var(--coral)}
+    td b.rank-no{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:9px;background:var(--soft);color:var(--muted);font-size:12px}
+    tr:nth-child(1) td b.rank-no{background:var(--coral);color:#fff}
+    tr:nth-child(2) td b.rank-no{background:var(--mint);color:#0d3826}
+    tr:nth-child(3) td b.rank-no{background:var(--sky);color:#17354e}
+    .anomaly{display:grid;gap:9px;margin-top:4px}
+    .an-item{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:11px 14px;border:1px solid var(--line);border-radius:13px;background:var(--soft);font-size:12.5px}
+    .an-item .lv{padding:2px 9px;border-radius:99px;font-size:10px;font-weight:900}
+    .lv.warn{background:color-mix(in srgb,var(--cream) 65%,var(--surface));color:#4a2d11}
+    .lv.info{background:color-mix(in srgb,var(--sky) 40%,var(--surface));color:#17354e}
+    .an-item small{display:block;color:var(--muted);font-size:11px;font-weight:750;margin-top:2px}
+    .sr-only{position:absolute;left:-9999px}
+    .rank-metric{display:flex;gap:10px;margin-bottom:14px}
+    @media(max-width:960px){.shell{grid-template-columns:1fr}.side{position:fixed;inset:0 auto 0 0;z-index:20;width:250px;transform:translateX(-105%);transition:transform .2s;background:var(--canvas)}.side.open{transform:none}.menu-btn{display:inline-block}.kpis{grid-template-columns:repeat(2,1fr)}.grid-2{grid-template-columns:1fr}}
+    @media(max-width:600px){.main{padding:0 18px 40px}.topbar{flex-wrap:wrap}.topbar h1{font-size:20px}.bars{height:130px}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="side" id="side-nav">
+      <a class="brand" href="09-admin-dashboard.html"><span class="mark"><i></i></span>Playbook 后台</a>
+      <nav aria-label="后台导航">
+        <a class="nav-item" href="09-admin-dashboard.html"><span><b>▦</b> 概览</span></a>
+        <a class="nav-item" href="10-admin-posts.html"><span><b>▤</b> 文章</span></a>
+        <a class="nav-item" href="11-admin-timeline.html"><span><b>◌</b> 时间轴</span></a>
+        <a class="nav-item" href="12-admin-comments.html"><span><b>●</b> 评论</span><span class="badge">5</span></a>
+        <a class="nav-item" href="13-admin-analytics.html" aria-current="page"><span><b>◒</b> 分析</span></a>
+        <a class="nav-item" href="14-admin-settings.html"><span><b>⚙</b> 设置</span></a>
+      </nav>
+      <div class="side-foot">
+        <a href="01-home.html">↗ 查看站点</a><br>
+        <a href="index.html">Demo 索引</a><br>
+        admin@playbook.example
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div style="display:flex;align-items:center;gap:12px">
+          <button class="menu-btn" id="menu-btn" type="button" aria-label="打开导航" aria-expanded="false" aria-controls="side-nav"><span>≡</span></button>
+          <div><h1>分析</h1><p class="sub">操作型分析面板 · 聚合数据缓存 5–15 分钟</p></div>
+        </div>
+        <div class="top-actions">
+          <button class="toggle" id="theme-toggle" type="button" aria-label="切换晚间主题" aria-pressed="false"><span class="toggle-top">☼<span class="knob"></span>☾</span></button>
+          <a class="view-btn" href="07-stats.html"><span>↗ 公开统计</span></a>
+          <button class="avatar-btn" type="button" aria-label="账户菜单">LN</button>
+        </div>
+      </header>
+
+      <div class="toolbar" aria-label="时间范围">
+        <button class="chip" type="button" aria-pressed="true">7 天</button>
+        <button class="chip" type="button" aria-pressed="false">30 天</button>
+        <button class="chip" type="button" aria-pressed="false">90 天</button>
+        <button class="chip" type="button" aria-pressed="false">365 天</button>
+        <span class="spacer"></span>
+        <span class="updated">粒度：日 · 最后聚合 2026.07.18 03:00</span>
+        <button class="button small cream" type="button" id="refresh-btn"><span>↻ 刷新</span></button>
+      </div>
+
+      <div class="kpis" aria-label="核心指标">
+        <div class="kpi"><span>596</span><small>有效浏览（7日）</small></div>
+        <div class="kpi"><span>24</span><small>新增点赞（7日）</small></div>
+        <div class="kpi"><span>8 / 5</span><small>公开评论 / 待审</small></div>
+        <div class="kpi"><span>2</span><small>内容发布（7日）</small></div>
+      </div>
+
+      <section class="grid-2" aria-label="趋势图">
+        <div class="chart">
+          <h3>浏览趋势（近 7 日）</h3>
+          <p class="desc">按日聚合 · 去重后有效浏览</p>
+          <div class="bars" id="views-bars" role="img" aria-label="近7日浏览趋势柱状图"></div>
+          <div class="legend"><span><i style="background:var(--coral)"></i>有效浏览</span></div>
+          <table class="sr-only"><caption>近7日浏览数据</caption><tbody><tr><td>7/12</td><td>64</td></tr><tr><td>7/13</td><td>71</td></tr><tr><td>7/14</td><td>58</td></tr><tr><td>7/15</td><td>83</td></tr><tr><td>7/16</td><td>76</td></tr><tr><td>7/17</td><td>142</td></tr><tr><td>7/18</td><td>102</td></tr></tbody></table>
+        </div>
+        <div class="chart">
+          <h3>互动趋势（近 7 日）</h3>
+          <p class="desc">点赞与评论分开统计，避免双轴误导</p>
+          <div class="bars" id="like-bars" role="img" aria-label="近7日点赞趋势柱状图"></div>
+          <div class="legend"><span><i style="background:var(--mint)"></i>点赞</span></div>
+          <table class="sr-only"><caption>近7日点赞数据</caption><tbody><tr><td>7/12</td><td>3</td></tr><tr><td>7/13</td><td>4</td></tr><tr><td>7/14</td><td>2</td></tr><tr><td>7/15</td><td>3</td></tr><tr><td>7/16</td><td>5</td></tr><tr><td>7/17</td><td>9</td></tr><tr><td>7/18</td><td>6</td></tr></tbody></table>
+        </div>
+      </section>
+
+      <section class="grid-2" aria-label="内容排行">
+        <div class="chart">
+          <h3>内容排行</h3>
+          <div class="rank-metric" role="group" aria-label="排行指标">
+            <button class="chip" type="button" aria-pressed="true">按浏览</button>
+            <button class="chip" type="button" aria-pressed="false">按点赞</button>
+            <button class="chip" type="button" aria-pressed="false">按评论</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>标题</th><th>浏览</th><th>趋势</th></tr></thead>
+              <tbody>
+                <tr><td><b class="rank-no">1</b></td><td>可玩的记录机</td><td>1,284</td><td class="trend-up">▲ 12%</td></tr>
+                <tr><td><b class="rank-no">2</b></td><td>夜间主题不是调暗</td><td>976</td><td class="trend-up">▲ 5%</td></tr>
+                <tr><td><b class="rank-no">3</b></td><td>Supabase 实践笔记</td><td>841</td><td class="trend-down">▼ 3%</td></tr>
+                <tr><td><b class="rank-no">4</b></td><td>主题样式库建立（时间轴）</td><td>342</td><td class="trend-up">▲ 28%</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="chart">
+          <h3>来源与设备摘要</h3>
+          <p class="desc">仅展示达到最小样本阈值的聚合 · 不含单访客轨迹</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>来源</th><th>占比</th><th>趋势</th></tr></thead>
+              <tbody>
+                <tr><td>直接访问</td><td>42%</td><td class="trend-up">▲ 3%</td></tr>
+                <tr><td>搜索引擎</td><td>31%</td><td class="trend-up">▲ 6%</td></tr>
+                <tr><td>社交平台</td><td>18%</td><td class="trend-down">▼ 2%</td></tr>
+                <tr><td>其他站点</td><td>9%</td><td>—</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="desc" style="margin-top:10px">设备：移动 58% · 桌面 39% · 其他 3%</p>
+        </div>
+      </section>
+
+      <section class="grid-2" aria-label="活动与异常">
+        <div class="chart">
+          <h3>活动与异常</h3>
+          <p class="desc">异常标记仅辅助调查，不自动认定攻击</p>
+          <div class="anomaly">
+            <div class="an-item"><span class="lv warn">尖峰</span><span><b>7/17 浏览量激增 +87%</b><small>主题发布日自然流量 · 观察中</small></span><span class="trend-up">正常</span></div>
+            <div class="an-item"><span class="lv info">任务</span><span><b>07.17 聚合任务超时后重试成功</b><small>已自动重算 · 无数据缺口</small></span><span class="trend-up">已恢复</span></div>
+            <div class="an-item"><span class="lv warn">限流</span><span><b>7/15 评论接口触发限流 3 次</b><small>来自同一 IP 段 · 已按策略拦截</small></span><span class="trend-down">已拦截</span></div>
+          </div>
+        </div>
+        <div class="chart">
+          <h3>导出</h3>
+          <p class="desc">导出为后续能力 · 仅聚合数据，不含访客标识</p>
+          <div style="display:flex;gap:12px;flex-wrap:wrap">
+            <button class="button small cream" type="button" disabled title="后续开放"><span>导出 CSV（后续）</span></button>
+            <button class="button small cream" type="button" disabled title="后续开放"><span>导出报表（后续）</span></button>
+          </div>
+          <p class="desc" style="margin-top:14px;line-height:1.7">导出任务将由服务端生成，使用短期签名下载链接，并记录审计日志。自定义时间范围为后续能力。</p>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    const root=document.documentElement;
+    const toggle=document.getElementById('theme-toggle');
+    const saved=localStorage.getItem('playbook-theme');
+    const initial=saved||(matchMedia('(prefers-color-scheme: dark)').matches?'night':'light');
+    function setTheme(theme){root.dataset.theme=theme;if(toggle){toggle.setAttribute('aria-pressed',String(theme==='night'));toggle.setAttribute('aria-label',theme==='night'?'切换日间主题':'切换晚间主题')}localStorage.setItem('playbook-theme',theme)}
+    setTheme(initial);
+    if(toggle)toggle.addEventListener('click',()=>setTheme(root.dataset.theme==='night'?'light':'night'));
+    const menuBtn=document.getElementById('menu-btn');
+    const side=document.getElementById('side-nav');
+    menuBtn.addEventListener('click',()=>{const open=side.classList.toggle('open');menuBtn.setAttribute('aria-expanded',String(open))});
+    document.addEventListener('keydown',e=>{if(e.key==='Escape')side.classList.remove('open')});
+    function renderBars(id,data,labels,mint){
+      const el=document.getElementById(id);
+      const max=Math.max(...data);
+      el.innerHTML=data.map((v,i)=>'<div class="bar-col"><div class="bar'+(mint?' mint':'')+'" style="height:'+Math.round(v/max*100)+'%" title="'+labels[i]+'：'+v+'"></div><span class="bar-label">'+labels[i]+'</span></div>').join('');
+    }
+    const days=['7/12','7/13','7/14','7/15','7/16','7/17','7/18'];
+    renderBars('views-bars',[64,71,58,83,76,142,102],days,false);
+    renderBars('like-bars',[3,4,2,3,5,9,6],days,true);
+    document.querySelectorAll('.toolbar .chip, .rank-metric .chip').forEach(chip=>chip.addEventListener('click',()=>{
+      chip.parentElement.querySelectorAll('.chip').forEach(c=>c.setAttribute('aria-pressed','false'));
+      chip.setAttribute('aria-pressed','true');
+    }));
+    document.getElementById('refresh-btn').addEventListener('click',e=>{
+      const b=e.currentTarget;const s=b.querySelector('span');
+      b.disabled=true;s.textContent='刷新中…';
+      setTimeout(()=>{b.disabled=false;s.textContent='↻ 刷新'},900);
+    });
+  </script>
+</body>
+</html>

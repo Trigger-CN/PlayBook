@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Playbook 个人内容站 - 后台仪表盘设计 Demo（noindex）">
+  <meta name="robots" content="noindex,nofollow">
+  <title>仪表盘 - Playbook 后台</title>
+  <style>
+    :root{--canvas:#fffdf8;--ink:#211522;--muted:#765f73;--line:rgba(72,42,62,.12);--surface:#fff;--soft:#fff0e6;--coral:#ff656c;--coral-base:#72002f;--pink:#f58bc5;--pink-base:#9b078b;--cream:#ffe5c5;--cream-base:#b78122;--mint:#82e2bf;--mint-base:#146044;--sky:#8dd1ff;--sky-base:#1c6199;--lilac:#e989ee;--lilac-base:#90009d;--shell:#ffc9cb;--grid:rgba(72,42,62,.08);--shadow:0 9px 0 rgba(114,0,47,.13)}
+    [data-theme=night]{--canvas:#21162c;--ink:#fff9f1;--muted:#cdbbd0;--line:rgba(255,230,204,.14);--surface:#31223d;--soft:#3e2b4a;--coral:#ff7379;--coral-base:#5a082e;--pink:#e995d8;--pink-base:#70106e;--cream:#ffdfaa;--cream-base:#76511d;--mint:#7fe0bd;--mint-base:#104934;--sky:#82c7f2;--sky-base:#153e6e;--lilac:#d49aff;--lilac-base:#4b246e;--shell:#4a304f;--grid:rgba(255,230,204,.08);--shadow:0 9px 0 rgba(15,6,21,.3)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background-color:var(--canvas);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:32px 32px;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Noto Sans SC",sans-serif;transition:background-color .25s,color .25s}button,input,textarea{font:inherit}button{color:inherit}a{color:inherit;text-decoration:none}
+    :focus-visible{outline:4px solid var(--sky);outline-offset:4px}
+    .shell{display:grid;grid-template-columns:216px 1fr;min-height:100vh}
+    /* 侧栏 */
+    .side{display:flex;flex-direction:column;gap:6px;padding:22px 16px;border-right:1px solid var(--line);background:color-mix(in srgb,var(--surface) 72%,transparent)}
+    .brand{display:inline-flex;align-items:center;gap:10px;margin:0 6px 22px;font-family:Georgia,"Noto Serif SC",serif;font-size:19px;font-weight:700}.mark{width:30px;height:30px;display:grid;place-items:center;border-radius:10px;background:var(--coral);box-shadow:0 5px 0 var(--coral-base);transform:rotate(-7deg)}.mark i{display:block;width:12px;height:12px;border:3px solid var(--ink);border-radius:50%}
+    .nav-item{position:relative;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;padding:0 0 6px;border:0;border-radius:13px;cursor:pointer;background:var(--line);text-align:left}
+    .nav-item>span{display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;border-radius:inherit;background:var(--soft);transform:translateY(-6px);transition:transform .1s,filter .12s;font-size:13.5px;font-weight:750;color:var(--muted)}
+    .nav-item:hover>span{transform:translateY(-8px);filter:brightness(1.02)}
+    .nav-item:active>span{transform:translateY(-1px)}
+    .nav-item[aria-current=page]>span{background:var(--coral);color:#fff}
+    .badge{padding:2px 8px;border-radius:99px;background:var(--pink);color:#341624;font-size:10.5px;font-weight:900}
+    .nav-item[aria-current=page] .badge{background:var(--cream);color:#42220e}
+    .side-foot{margin-top:auto;padding:12px 8px 0;border-top:1px solid var(--line);color:var(--muted);font-size:11px;font-weight:700;line-height:1.8}
+    .side-foot a{color:var(--muted)}.side-foot a:hover{color:var(--ink)}
+    /* 主区 */
+    .main{padding:0 30px 56px;min-width:0}
+    .topbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0 14px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--canvas) 88%,transparent);backdrop-filter:blur(4px)}
+    .topbar h1{margin:0;font-family:Georgia,"Noto Serif SC",serif;font-size:24px}
+    .topbar .sub{color:var(--muted);font-size:12px;font-weight:700;margin-top:3px}
+    .top-actions{display:flex;align-items:center;gap:14px}
+    .menu-btn{display:none;position:relative;width:46px;height:46px;padding:0 0 5px;border:0;border-radius:12px;cursor:pointer;background:var(--coral-base)}.menu-btn span{display:grid;place-items:center;width:100%;height:100%;border-radius:inherit;background:var(--coral);transform:translateY(-5px);font-size:17px;font-weight:900;color:#fff;transition:transform .1s}.menu-btn:active span{transform:translateY(-1px)}
+    .toggle{position:relative;width:74px;height:39px;padding:0;border:0;border-radius:99px;cursor:pointer;background:transparent}.toggle:before{content:"";position:absolute;inset:6px 0 0;border-radius:inherit;background:var(--pink-base)}.toggle-top{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:4px 8px;border-radius:inherit;color:#28152b;background:var(--pink);transition:transform .12s}.knob{width:27px;height:27px;border-radius:50%;background:var(--cream);box-shadow:inset -3px -3px 0 rgba(100,61,0,.12);transition:transform .2s}[data-theme=night] .knob{transform:translateX(27px)}.toggle:active .toggle-top{transform:translateY(5px)}
+    .view-btn{position:relative;min-height:42px;padding:0 0 7px;border:0;border-radius:13px;cursor:pointer;background:var(--sky-base)}.view-btn span{display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:0 15px;border-radius:inherit;background:var(--sky);transform:translateY(-7px);font-size:12.5px;font-weight:850;color:#15344e;transition:transform .1s}.view-btn:hover span{transform:translateY(-9px)}.view-btn:active span{transform:translateY(-1px)}
+    .avatar-btn{display:grid;place-items:center;width:42px;height:42px;border:0;border-radius:50%;cursor:pointer;background:var(--mint);box-shadow:0 5px 0 var(--mint-base);font-size:13px;font-weight:900;color:#0d3826;transform:translateY(-5px);transition:transform .1s}.avatar-btn:hover{transform:translateY(-7px)}.avatar-btn:active{transform:translateY(0)}
+    .button{--cap:var(--coral);--base:var(--coral-base);position:relative;display:inline-grid;min-height:52px;place-items:center;padding:0 0 8px;border:0;border-radius:16px;cursor:pointer;background:var(--base);font-weight:850}.button>span{display:inline-flex;align-items:center;justify-content:center;gap:9px;width:100%;min-height:52px;padding:0 21px;border-radius:inherit;background:var(--cap);transform:translateY(-8px);transition:transform .11s,filter .15s}.button:hover>span{transform:translateY(-11px);filter:brightness(1.035) saturate(1.05)}.button:active>span{transform:translateY(-2px)}.button.pink{--cap:var(--pink);--base:var(--pink-base)}.button.cream{--cap:var(--cream);--base:var(--cream-base);color:#42220e}.button.mint{--cap:var(--mint);--base:var(--mint-base);color:#10392b}.button.sky{--cap:var(--sky);--base:var(--sky-base);color:#15344e}.button.small{min-height:42px;padding:0 0 7px;border-radius:13px;font-size:13px}.button.small>span{min-height:42px;padding:0 14px;transform:translateY(-7px)}.button.small:hover>span{transform:translateY(-9px)}.button.small:active>span{transform:translateY(-1px)}
+    .section{margin-top:30px}.section>h2{margin:0 0 14px;font-family:Georgia,"Noto Serif SC",serif;font-size:19px}
+    /* 待办条 */
+    .todos{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+    .todo{--cap:var(--coral);--base:var(--coral-base);display:grid;grid-template-columns:52px 1fr auto;gap:14px;align-items:center;padding:0 16px 8px 0;border:0;border-radius:18px;cursor:pointer;background:var(--base);text-align:left}
+    .todo:nth-child(2){--cap:var(--cream);--base:var(--cream-base)}
+    .todo:nth-child(3){--cap:var(--mint);--base:var(--mint-base)}
+    .todo .face{display:grid;grid-template-columns:52px 1fr auto;gap:14px;align-items:center;width:100%;padding:14px 0 14px 16px;border-radius:inherit;background:var(--cap);transform:translateY(-8px);transition:transform .11s,filter .15s}
+    .todo:hover .face{transform:translateY(-11px);filter:brightness(1.03)}.todo:active .face{transform:translateY(-1px)}
+    .todo .num{display:grid;place-items:center;width:52px;height:52px;border-radius:14px;background:rgba(33,21,34,.16);font-family:Georgia,serif;font-size:23px;font-weight:900}
+    .todo b{font-size:14.5px}.todo small{display:block;font-size:11.5px;font-weight:750;opacity:.78;margin-top:3px}
+    .todo .arrow{font-size:17px;opacity:.7}
+    .todo.coral-txt,.todo.coral-txt b{color:#fff}
+    /* 摘要 */
+    .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+    .kpi{position:relative;overflow:hidden;padding:16px;border:1px solid var(--line);border-radius:16px;background:var(--soft)}.kpi:after{content:"";position:absolute;right:-16px;bottom:-20px;width:64px;height:64px;border-radius:50%;background:var(--coral);opacity:.35}.kpi:nth-child(2):after{background:var(--mint)}.kpi:nth-child(3):after{background:var(--sky)}.kpi:nth-child(4):after{background:var(--lilac)}.kpi span{display:block;position:relative;z-index:1;font-family:Georgia,serif;font-size:26px;font-weight:800}.kpi small{display:block;position:relative;z-index:1;margin-top:8px;color:var(--muted);font-size:11.5px;font-weight:750}
+    /* 双栏列表 */
+    .cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+    .panel{padding:18px;border:1px solid var(--line);border-radius:18px;background:var(--surface)}
+    .panel h3{display:flex;align-items:center;justify-content:space-between;margin:0 0 12px;font-size:14.5px}.panel h3 a{color:var(--muted);font-size:12px;font-weight:800}
+    .row{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:11px 4px;border-top:1px solid var(--line)}.row:first-of-type{border-top:0}
+    .pill{display:inline-block;padding:3px 9px;border-radius:99px;font-size:10px;font-weight:850}
+    .pill.publish{background:color-mix(in srgb,var(--mint) 42%,var(--surface));color:#0d3826}
+    .pill.draft{background:color-mix(in srgb,var(--cream) 55%,var(--surface));color:#4a2d11}
+    .pill.timeline{background:color-mix(in srgb,var(--sky) 42%,var(--surface));color:#17354e}
+    .pill.comment{background:color-mix(in srgb,var(--pink) 38%,var(--surface));color:#341624}
+    .row b{font-size:13px;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row small{display:block;color:var(--muted);font-size:11px;font-weight:750;margin-top:2px}.row .time{color:var(--muted);font-size:11px;font-weight:800}
+    .log{display:grid;gap:8px}
+    .log-row{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;padding:10px 14px;border:1px solid var(--line);border-radius:13px;background:var(--soft);font-size:12.5px}.log-row b{font-size:12.5px}.log-row small{color:var(--muted);font-size:11px;font-weight:750}
+    .quick{display:flex;flex-wrap:wrap;gap:13px}
+    @media(max-width:960px){.shell{grid-template-columns:1fr}.side{position:fixed;inset:0 auto 0 0;z-index:20;width:250px;transform:translateX(-105%);transition:transform .2s;background:var(--canvas)}.side.open{transform:none}.menu-btn{display:inline-block}.todos{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}.cols{grid-template-columns:1fr}}
+    @media(max-width:600px){.main{padding:0 18px 40px}.topbar{flex-wrap:wrap}.topbar h1{font-size:20px}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="side" id="side-nav">
+      <a class="brand" href="09-admin-dashboard.html"><span class="mark"><i></i></span>Playbook 后台</a>
+      <nav aria-label="后台导航">
+        <a class="nav-item" href="09-admin-dashboard.html" aria-current="page"><span><b>▦</b> 概览</span></a>
+        <a class="nav-item" href="10-admin-posts.html"><span><b>▤</b> 文章</span></a>
+        <a class="nav-item" href="11-admin-timeline.html"><span><b>◌</b> 时间轴</span></a>
+        <a class="nav-item" href="12-admin-comments.html"><span><b>●</b> 评论</span><span class="badge">5</span></a>
+        <a class="nav-item" href="13-admin-analytics.html"><span><b>◒</b> 分析</span></a>
+        <a class="nav-item" href="14-admin-settings.html"><span><b>⚙</b> 设置</span></a>
+      </nav>
+      <div class="side-foot">
+        <a href="01-home.html">↗ 查看站点</a><br>
+        <a href="index.html">Demo 索引</a><br>
+        admin@playbook.example
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div style="display:flex;align-items:center;gap:12px">
+          <button class="menu-btn" id="menu-btn" type="button" aria-label="打开导航" aria-expanded="false" aria-controls="side-nav"><span>≡</span></button>
+          <div>
+            <h1>概览</h1>
+            <p class="sub">早上好，Lin · 数据更新于 2026.07.18 03:00</p>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button class="toggle" id="theme-toggle" type="button" aria-label="切换晚间主题" aria-pressed="false"><span class="toggle-top">☼<span class="knob"></span>☾</span></button>
+          <a class="view-btn" href="01-home.html"><span>↗ 查看站点</span></a>
+          <button class="avatar-btn" type="button" aria-label="账户菜单">LN</button>
+        </div>
+      </header>
+
+      <section class="section" aria-label="待办">
+        <div class="todos">
+          <a class="todo coral-txt" href="12-admin-comments.html">
+            <span class="face"><span class="num">5</span><span><b>待审核评论</b><small>最早等待 2 天</small></span><span class="arrow">→</span></span>
+          </a>
+          <a class="todo" href="10-admin-posts.html">
+            <span class="face"><span class="num">3</span><span><b>草稿文章</b><small>1 篇超过 7 天未更新</small></span><span class="arrow">→</span></span>
+          </a>
+          <a class="todo" href="13-admin-analytics.html">
+            <span class="face"><span class="num">1</span><span><b>失败任务</b><small>07.17 聚合任务超时重试成功</small></span><span class="arrow">→</span></span>
+          </a>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="kpi-title">
+        <h2 id="kpi-title">近 7 日摘要</h2>
+        <div class="kpis">
+          <div class="kpi"><span>2,417</span><small>有效浏览</small></div>
+          <div class="kpi"><span>86</span><small>新增点赞</small></div>
+          <div class="kpi"><span>19</span><small>公开评论</small></div>
+          <div class="kpi"><span>2 + 6</span><small>发布文章 / 时间轴节点</small></div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="work-title">
+        <h2 id="work-title">最近工作区</h2>
+        <div class="cols">
+          <div class="panel">
+            <h3>最近内容变更 <a href="10-admin-posts.html">全部 →</a></h3>
+            <div class="row"><span class="pill publish">文章</span><span><b>我把个人网站做成了一台可玩的记录机</b><small>已发布 · 更新于 07.18</small></span><span class="time">2h</span></div>
+            <div class="row"><span class="pill timeline">时间轴</span><span><b>主题样式库建立</b><small>已发布 · 更新于 07.18</small></span><span class="time">6h</span></div>
+            <div class="row"><span class="pill draft">草稿</span><span><b>从 0 到 1 搭建评论审核流（未完）</b><small>草稿 · 更新于 07.16</small></span><span class="time">2d</span></div>
+            <div class="row"><span class="pill timeline">时间轴</span><span><b>舟山群岛两日</b><small>已发布 · 更新于 07.05</small></span><span class="time">13d</span></div>
+          </div>
+          <div class="panel">
+            <h3>最近评论 <a href="12-admin-comments.html">审核 →</a></h3>
+            <div class="row"><span class="pill comment">待审</span><span><b>Kexin：六个色对的命名太好记了…</b><small>目标：主题样式库建立</small></span><span class="time">2h</span></div>
+            <div class="row"><span class="pill comment">已批准</span><span><b>Yuki J.：这个实体按压感很好…</b><small>目标：可玩的记录机</small></span><span class="time">1d</span></div>
+            <div class="row"><span class="pill comment">已批准</span><span><b>Moto：看完立刻给自己的博客…</b><small>目标：可玩的记录机</small></span><span class="time">1d</span></div>
+            <div class="row"><span class="pill comment">已拒绝</span><span><b>匿名：加个微信吧 fx888…</b><small>目标：夜间主题一文</small></span><span class="time">3d</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="log-title">
+        <h2 id="log-title">活动日志与快捷操作</h2>
+        <div class="cols">
+          <div class="panel">
+            <div class="log">
+              <div class="log-row"><span>✓</span><span><b>发布时间轴节点「主题样式库建立」</b><small>admin · 2026.07.18 09:41</small></span></div>
+              <div class="log-row"><span>✓</span><span><b>批准评论 ×2（可玩的记录机）</b><small>admin · 2026.07.17 21:12</small></span></div>
+              <div class="log-row"><span>↻</span><span><b>每日聚合任务执行（07.17）</b><small>system · 2026.07.18 03:00</small></span></div>
+              <div class="log-row"><span>✓</span><span><b>更新文章「夜间主题不是把颜色调暗」</b><small>admin · 2026.07.16 15:07</small></span></div>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>快捷操作</h3>
+            <div class="quick">
+              <a class="button small" href="11-admin-timeline.html"><span>＋ 新建时间轴</span></a>
+              <a class="button small pink" href="12-admin-comments.html"><span>审核评论 (5)</span></a>
+              <a class="button small sky" href="01-home.html"><span>↗ 查看站点</span></a>
+              <a class="button small mint" href="13-admin-analytics.html"><span>查看分析</span></a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <script>
+    const root=document.documentElement;
+    const toggle=document.getElementById('theme-toggle');
+    const saved=localStorage.getItem('playbook-theme');
+    const initial=saved||(matchMedia('(prefers-color-scheme: dark)').matches?'night':'light');
+    function setTheme(theme){root.dataset.theme=theme;if(toggle){toggle.setAttribute('aria-pressed',String(theme==='night'));toggle.setAttribute('aria-label',theme==='night'?'切换日间主题':'切换晚间主题')}localStorage.setItem('playbook-theme',theme)}
+    setTheme(initial);
+    if(toggle)toggle.addEventListener('click',()=>setTheme(root.dataset.theme==='night'?'light':'night'));
+    // 移动抽屉
+    const menuBtn=document.getElementById('menu-btn');
+    const side=document.getElementById('side-nav');
+    menuBtn.addEventListener('click',()=>{
+      const open=side.classList.toggle('open');
+      menuBtn.setAttribute('aria-expanded',String(open));
+    });
+    document.addEventListener('keydown',e=>{
+      if(e.key==='Escape'&&side.classList.contains('open')){side.classList.remove('open');menuBtn.setAttribute('aria-expanded','false');menuBtn.focus()}
+    });
+  </script>
+</body>
+</html>

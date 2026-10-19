@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Playbook 个人内容站 - 后台评论审核设计 Demo（noindex）">
+  <meta name="robots" content="noindex,nofollow">
+  <title>评论审核 - Playbook 后台</title>
+  <style>
+    :root{--canvas:#fffdf8;--ink:#211522;--muted:#765f73;--line:rgba(72,42,62,.12);--surface:#fff;--soft:#fff0e6;--coral:#ff656c;--coral-base:#72002f;--pink:#f58bc5;--pink-base:#9b078b;--cream:#ffe5c5;--cream-base:#b78122;--mint:#82e2bf;--mint-base:#146044;--sky:#8dd1ff;--sky-base:#1c6199;--lilac:#e989ee;--lilac-base:#90009d;--shell:#ffc9cb;--grid:rgba(72,42,62,.08);--shadow:0 9px 0 rgba(114,0,47,.13)}
+    [data-theme=night]{--canvas:#21162c;--ink:#fff9f1;--muted:#cdbbd0;--line:rgba(255,230,204,.14);--surface:#31223d;--soft:#3e2b4a;--coral:#ff7379;--coral-base:#5a082e;--pink:#e995d8;--pink-base:#70106e;--cream:#ffdfaa;--cream-base:#76511d;--mint:#7fe0bd;--mint-base:#104934;--sky:#82c7f2;--sky-base:#153e6e;--lilac:#d49aff;--lilac-base:#4b246e;--shell:#4a304f;--grid:rgba(255,230,204,.08);--shadow:0 9px 0 rgba(15,6,21,.3)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background-color:var(--canvas);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:32px 32px;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Noto Sans SC",sans-serif;transition:background-color .25s,color .25s}button,input,textarea,select{font:inherit}button{color:inherit}a{color:inherit;text-decoration:none}
+    :focus-visible{outline:4px solid var(--sky);outline-offset:4px}
+    .shell{display:grid;grid-template-columns:216px 1fr;min-height:100vh}
+    .side{display:flex;flex-direction:column;gap:6px;padding:22px 16px;border-right:1px solid var(--line);background:color-mix(in srgb,var(--surface) 72%,transparent)}
+    .brand{display:inline-flex;align-items:center;gap:10px;margin:0 6px 22px;font-family:Georgia,"Noto Serif SC",serif;font-size:19px;font-weight:700}.mark{width:30px;height:30px;display:grid;place-items:center;border-radius:10px;background:var(--coral);box-shadow:0 5px 0 var(--coral-base);transform:rotate(-7deg)}.mark i{display:block;width:12px;height:12px;border:3px solid var(--ink);border-radius:50%}
+    .nav-item{position:relative;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;padding:0 0 6px;border:0;border-radius:13px;cursor:pointer;background:var(--line);text-align:left}
+    .nav-item>span{display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;border-radius:inherit;background:var(--soft);transform:translateY(-6px);transition:transform .1s,filter .12s;font-size:13.5px;font-weight:750;color:var(--muted)}
+    .nav-item:hover>span{transform:translateY(-8px);filter:brightness(1.02)}
+    .nav-item:active>span{transform:translateY(-1px)}
+    .nav-item[aria-current=page]>span{background:var(--coral);color:#fff}
+    .badge{padding:2px 8px;border-radius:99px;background:var(--pink);color:#341624;font-size:10.5px;font-weight:900}
+    .nav-item[aria-current=page] .badge{background:var(--cream);color:#42220e}
+    .side-foot{margin-top:auto;padding:12px 8px 0;border-top:1px solid var(--line);color:var(--muted);font-size:11px;font-weight:700;line-height:1.8}.side-foot a{color:var(--muted)}.side-foot a:hover{color:var(--ink)}
+    .main{padding:0 30px 56px;min-width:0}
+    .topbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0 14px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--canvas) 88%,transparent);backdrop-filter:blur(4px)}
+    .topbar h1{margin:0;font-family:Georgia,"Noto Serif SC",serif;font-size:24px}.topbar .sub{color:var(--muted);font-size:12px;font-weight:700;margin-top:3px}
+    .top-actions{display:flex;align-items:center;gap:14px}
+    .menu-btn{display:none;position:relative;width:46px;height:46px;padding:0 0 5px;border:0;border-radius:12px;cursor:pointer;background:var(--coral-base)}.menu-btn span{display:grid;place-items:center;width:100%;height:100%;border-radius:inherit;background:var(--coral);transform:translateY(-5px);font-size:17px;font-weight:900;color:#fff;transition:transform .1s}.menu-btn:active span{transform:translateY(-1px)}
+    .toggle{position:relative;width:74px;height:39px;padding:0;border:0;border-radius:99px;cursor:pointer;background:transparent}.toggle:before{content:"";position:absolute;inset:6px 0 0;border-radius:inherit;background:var(--pink-base)}.toggle-top{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:4px 8px;border-radius:inherit;color:#28152b;background:var(--pink);transition:transform .12s}.knob{width:27px;height:27px;border-radius:50%;background:var(--cream);box-shadow:inset -3px -3px 0 rgba(100,61,0,.12);transition:transform .2s}[data-theme=night] .knob{transform:translateX(27px)}.toggle:active .toggle-top{transform:translateY(5px)}
+    .view-btn{position:relative;min-height:42px;padding:0 0 7px;border:0;border-radius:13px;cursor:pointer;background:var(--sky-base)}.view-btn span{display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:0 15px;border-radius:inherit;background:var(--sky);transform:translateY(-7px);font-size:12.5px;font-weight:850;color:#15344e;transition:transform .1s}.view-btn:hover span{transform:translateY(-9px)}.view-btn:active span{transform:translateY(-1px)}
+    .avatar-btn{display:grid;place-items:center;width:42px;height:42px;border:0;border-radius:50%;cursor:pointer;background:var(--mint);box-shadow:0 5px 0 var(--mint-base);font-size:13px;font-weight:900;color:#0d3826;transform:translateY(-5px);transition:transform .1s}.avatar-btn:hover{transform:translateY(-7px)}.avatar-btn:active{transform:translateY(0)}
+    .button{--cap:var(--coral);--base:var(--coral-base);position:relative;display:inline-grid;min-height:52px;place-items:center;padding:0 0 8px;border:0;border-radius:16px;cursor:pointer;background:var(--base);font-weight:850}.button>span{display:inline-flex;align-items:center;justify-content:center;gap:9px;width:100%;min-height:52px;padding:0 21px;border-radius:inherit;background:var(--cap);transform:translateY(-8px);transition:transform .11s,filter .15s}.button:hover>span{transform:translateY(-11px);filter:brightness(1.035) saturate(1.05)}.button:active>span{transform:translateY(-2px)}.button.pink{--cap:var(--pink);--base:var(--pink-base)}.button.cream{--cap:var(--cream);--base:var(--cream-base);color:#42220e}.button.mint{--cap:var(--mint);--base:var(--mint-base);color:#10392b}.button.sky{--cap:var(--sky);--base:var(--sky-base);color:#15344e}.button.small{min-height:42px;padding:0 0 7px;border-radius:13px;font-size:13px}.button.small>span{min-height:42px;padding:0 14px;transform:translateY(-7px)}.button.small:hover>span{transform:translateY(-9px)}.button.small:active>span{transform:translateY(-1px)}.button:disabled{cursor:not-allowed;opacity:.48}.button:disabled>span{transform:translateY(-4px)}
+    /* 审核页 */
+    .tabs{display:flex;flex-wrap:wrap;gap:12px;margin-top:24px}
+    .chip{--chip-cap:var(--cream);--chip-base:var(--cream-base);padding:8px 13px;border:0;border-radius:999px;cursor:pointer;background:var(--chip-cap);box-shadow:0 5px 0 var(--chip-base);color:#432b1b;font-size:12.5px;font-weight:800;transform:translateY(-5px);transition:transform .11s,box-shadow .11s,filter .15s}.chip:hover{transform:translateY(-7px);box-shadow:0 7px 0 var(--chip-base);filter:brightness(1.03)}.chip:active{transform:translateY(-1px);box-shadow:0 1px 0 var(--chip-base)}.chip[aria-pressed=true]{--chip-cap:var(--pink);--chip-base:var(--pink-base);color:#341624}
+    .cols{display:grid;grid-template-columns:1.15fr .85fr;gap:20px;align-items:start;margin-top:20px}
+    .queue{display:grid;gap:11px}
+    .cm{position:relative;display:grid;grid-template-columns:auto 1fr auto;gap:13px;align-items:start;padding:15px 16px;border:1px solid var(--line);border-radius:16px;background:var(--surface);cursor:pointer;transition:transform .12s,box-shadow .12s}
+    .cm:hover{transform:translateY(-2px)}
+    .cm[aria-current=true]{border-color:var(--coral);box-shadow:0 5px 0 var(--coral-base);transform:translateY(-5px)}
+    .cm input[type=checkbox]{width:17px;height:17px;margin-top:2px;accent-color:var(--pink)}
+    .cm .who b{font-size:13.5px}.cm .who .risk{display:inline-block;margin-left:7px;padding:1px 7px;border-radius:99px;background:color-mix(in srgb,var(--coral) 30%,var(--surface));color:var(--coral-base);font-size:9.5px;font-weight:900}[data-theme=night] .cm .who .risk{color:var(--coral)}
+    .cm .who small{display:block;color:var(--muted);font-size:11px;font-weight:750;margin-top:3px}
+    .cm .body{margin:7px 0 0;color:var(--muted);font-size:12.5px;line-height:1.6;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .cm .time{color:var(--muted);font-size:10.5px;font-weight:800;white-space:nowrap}
+    .pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:10px;font-weight:850}
+    .pill.pending{background:color-mix(in srgb,var(--cream) 60%,var(--surface));color:#4a2d11}
+    .pill.approved{background:color-mix(in srgb,var(--mint) 42%,var(--surface));color:#0d3826}
+    .pill.rejected{background:color-mix(in srgb,var(--coral) 28%,var(--surface));color:var(--coral-base)}[data-theme=night] .pill.rejected{color:var(--coral)}
+    /* 详情 */
+    .detail{position:sticky;top:84px;padding:20px;border:1px solid var(--line);border-radius:20px;background:var(--surface)}
+    .detail h3{margin:0 0 14px;font-size:16px}
+    .d-block{margin-bottom:16px}.d-block>label{display:block;margin-bottom:5px;color:var(--muted);font-size:11px;font-weight:850;letter-spacing:.04em}
+    .d-block p{margin:0;font-size:14px;line-height:1.7}
+    .d-block .meta-line{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12.5px;font-weight:700}
+    .target-ctx{display:grid;grid-template-columns:52px 1fr;gap:12px;padding:12px;border:1px dashed var(--line);border-radius:13px;background:var(--soft)}
+    .target-ctx .t-art{display:grid;place-items:center;width:52px;height:52px;border-radius:12px;background:var(--pink);font-size:21px}
+    .target-ctx b{font-size:12.5px;line-height:1.4}.target-ctx small{display:block;color:var(--muted);font-size:11px;font-weight:750;margin-top:2px}
+    .actions{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:18px}
+    .actions .button{min-height:46px}.actions .button>span{min-height:46px;padding:0 10px;font-size:13px}
+    .bulk-bar{display:none;align-items:center;gap:14px;margin-top:16px;padding:13px 17px;border-radius:15px;background:color-mix(in srgb,var(--sky) 30%,var(--surface))}.bulk-bar.show{display:flex}
+    .bulk-bar b{font-size:13px}.bulk-bar small{color:var(--muted);font-size:11.5px;font-weight:750}
+    @media(max-width:960px){.shell{grid-template-columns:1fr}.side{position:fixed;inset:0 auto 0 0;z-index:20;width:250px;transform:translateX(-105%);transition:transform .2s;background:var(--canvas)}.side.open{transform:none}.menu-btn{display:inline-block}.cols{grid-template-columns:1fr}.detail{position:static}}
+    @media(max-width:600px){.main{padding:0 18px 40px}.topbar{flex-wrap:wrap}.topbar h1{font-size:20px}.cm{grid-template-columns:auto 1fr}.cm .time{display:none}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="side" id="side-nav">
+      <a class="brand" href="09-admin-dashboard.html"><span class="mark"><i></i></span>Playbook 后台</a>
+      <nav aria-label="后台导航">
+        <a class="nav-item" href="09-admin-dashboard.html"><span><b>▦</b> 概览</span></a>
+        <a class="nav-item" href="10-admin-posts.html"><span><b>▤</b> 文章</span></a>
+        <a class="nav-item" href="11-admin-timeline.html"><span><b>◌</b> 时间轴</span></a>
+        <a class="nav-item" href="12-admin-comments.html" aria-current="page"><span><b>●</b> 评论</span><span class="badge">5</span></a>
+        <a class="nav-item" href="13-admin-analytics.html"><span><b>◒</b> 分析</span></a>
+        <a class="nav-item" href="14-admin-settings.html"><span><b>⚙</b> 设置</span></a>
+      </nav>
+      <div class="side-foot">
+        <a href="01-home.html">↗ 查看站点</a><br>
+        <a href="index.html">Demo 索引</a><br>
+        admin@playbook.example
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div style="display:flex;align-items:center;gap:12px">
+          <button class="menu-btn" id="menu-btn" type="button" aria-label="打开导航" aria-expanded="false" aria-controls="side-nav"><span>≡</span></button>
+          <div><h1>评论审核</h1><p class="sub">处理动作写入审计日志 · 邮箱仅显示掩码</p></div>
+        </div>
+        <div class="top-actions">
+          <button class="toggle" id="theme-toggle" type="button" aria-label="切换晚间主题" aria-pressed="false"><span class="toggle-top">☼<span class="knob"></span>☾</span></button>
+          <a class="view-btn" href="01-home.html"><span>↗ 查看站点</span></a>
+          <button class="avatar-btn" type="button" aria-label="账户菜单">LN</button>
+        </div>
+      </header>
+
+      <div class="tabs" role="group" aria-label="状态筛选">
+        <button class="chip" type="button" aria-pressed="true">待审核 (5)</button>
+        <button class="chip" type="button" aria-pressed="false">已批准 (94)</button>
+        <button class="chip" type="button" aria-pressed="false">已拒绝 (11)</button>
+      </div>
+
+      <div class="bulk-bar" id="bulk-bar" aria-live="polite">
+        <b>已选择 0 条</b><small>批量批准仅用于低风险队列；批量删除需二次确认</small>
+        <span style="flex:1"></span>
+        <button class="button small mint" type="button" id="bulk-approve"><span>批量批准</span></button>
+        <button class="button small cream" type="button" id="bulk-clear"><span>取消</span></button>
+      </div>
+
+      <div class="cols">
+        <section class="queue" aria-label="审核队列" id="queue">
+          <div class="cm" tabindex="0" role="button" aria-current="true" data-name="Kexin" data-email="k***@gmail.com" data-body="六个色对的命名太好记了，cap/base 一看就懂。夜间主题的底座明度是怎么定的？" data-target="主题样式库建立" data-type="时间轴节点" data-time="2026.07.18 11:23" data-status="pending">
+            <input type="checkbox" aria-label="选择 Kexin 的评论" class="cm-check">
+            <div class="who"><b>Kexin</b><span class="risk">低风险</span><small>目标：主题样式库建立 · 时间轴节点</small><p class="body">六个色对的命名太好记了，cap/base 一看就懂。夜间主题的底座明度是怎么定的？</p></div>
+            <span class="time">07.18 11:23</span>
+          </div>
+          <div class="cm" tabindex="0" role="button" data-name="匿名访客" data-email="未填写" data-body="你好，想请教评论区的 Turnstile 是怎么配置的？我在自己站上一直没跑通。" data-target="给个人站接上 Supabase" data-type="文章" data-time="2026.07.17 20:41" data-status="pending">
+            <input type="checkbox" aria-label="选择 匿名访客 的评论" class="cm-check">
+            <div class="who"><b>匿名访客</b><small>目标：给个人站接上 Supabase · 文章</small><p class="body">你好，想请教评论区的 Turnstile 是怎么配置的？我在自己站上一直没跑通。</p></div>
+            <span class="time">07.17 20:41</span>
+          </div>
+          <div class="cm" tabindex="0" role="button" data-name="Wei" data-email="w***@qq.com" data-body="夜间主题一文里的对比度表格可以直接做成工具，蹲一个开源。" data-target="夜间主题不是把颜色调暗" data-type="文章" data-time="2026.07.16 09:12" data-status="pending">
+            <input type="checkbox" aria-label="选择 Wei 的评论" class="cm-check">
+            <div class="who"><b>Wei</b><small>目标：夜间主题不是把颜色调暗 · 文章</small><p class="body">夜间主题一文里的对比度表格可以直接做成工具，蹲一个开源。</p></div>
+            <span class="time">07.16 09:12</span>
+          </div>
+          <div class="cm" tabindex="0" role="button" data-name="fx888" data-email="f***@163.com" data-body="加个微信吧 fx888，一起搞项目日入过万【广告】" data-target="七月清单" data-type="文章" data-time="2026.07.15 22:03" data-status="pending">
+            <input type="checkbox" aria-label="选择 fx888 的评论" class="cm-check">
+            <div class="who"><b>fx888</b><span class="risk">高风险</span><small>目标：七月清单 · 文章</small><p class="body">加个微信吧 fx888，一起搞项目日入过万【广告】</p></div>
+            <span class="time">07.15 22:03</span>
+          </div>
+          <div class="cm" tabindex="0" role="button" data-name="Reader_1024" data-email="r***@outlook.com" data-body="第三段的那句引言是出自哪本书？想找原文看看。" data-target="可玩的记录机" data-type="文章" data-time="2026.07.14 18:55" data-status="pending">
+            <input type="checkbox" aria-label="选择 Reader_1024 的评论" class="cm-check">
+            <div class="who"><b>Reader_1024</b><small>目标：可玩的记录机 · 文章</small><p class="body">第三段的那句引言是出自哪本书？想找原文看看。</p></div>
+            <span class="time">07.14 18:55</span>
+          </div>
+        </section>
+
+        <aside class="detail" id="detail" aria-label="评论详情">
+          <h3>评论详情</h3>
+          <div class="d-block"><label>作者</label><div class="meta-line"><b id="d-name">Kexin</b><span id="d-email" style="color:var(--muted)">k***@gmail.com</span><span class="pill pending" id="d-status">待审核</span></div></div>
+          <div class="d-block"><label>正文</label><p id="d-body">六个色对的命名太好记了，cap/base 一看就懂。夜间主题的底座明度是怎么定的？</p></div>
+          <div class="d-block"><label>目标上下文</label>
+            <div class="target-ctx"><span class="t-art" aria-hidden="true">✦</span><span><b id="d-target">主题样式库建立</b><small id="d-target-type">时间轴节点 · 发布于 2026.07.17</small></span></div>
+          </div>
+          <div class="d-block"><label>提交时间</label><p id="d-time" style="font-size:13px">2026.07.18 11:23</p></div>
+          <div class="d-block"><label>隐私</label><p style="font-size:12px;color:var(--muted)">IP / UA hash 默认不展示；如需安全调查请通过权限流程访问并记录审计。</p></div>
+          <div class="actions">
+            <button class="button small mint" type="button" id="approve-btn"><span>✓ 批准</span></button>
+            <button class="button small cream" type="button" id="reject-btn"><span>✕ 拒绝</span></button>
+            <button class="button small sky" type="button"><span>查看目标</span></button>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+  <script>
+    const root=document.documentElement;
+    const toggle=document.getElementById('theme-toggle');
+    const saved=localStorage.getItem('playbook-theme');
+    const initial=saved||(matchMedia('(prefers-color-scheme: dark)').matches?'night':'light');
+    function setTheme(theme){root.dataset.theme=theme;if(toggle){toggle.setAttribute('aria-pressed',String(theme==='night'));toggle.setAttribute('aria-label',theme==='night'?'切换日间主题':'切换晚间主题')}localStorage.setItem('playbook-theme',theme)}
+    setTheme(initial);
+    if(toggle)toggle.addEventListener('click',()=>setTheme(root.dataset.theme==='night'?'light':'night'));
+    const menuBtn=document.getElementById('menu-btn');
+    const side=document.getElementById('side-nav');
+    menuBtn.addEventListener('click',()=>{const open=side.classList.toggle('open');menuBtn.setAttribute('aria-expanded',String(open))});
+    document.addEventListener('keydown',e=>{if(e.key==='Escape')side.classList.remove('open')});
+    // 队列选择与详情联动
+    const cards=[...document.querySelectorAll('.cm')];
+    const statusMap={pending:['待审核','pending'],approved:['已批准','approved'],rejected:['已拒绝','rejected']};
+    function loadDetail(card){
+      cards.forEach(c=>c.setAttribute('aria-current','false'));
+      card.setAttribute('aria-current','true');
+      document.getElementById('d-name').textContent=card.dataset.name;
+      document.getElementById('d-email').textContent=card.dataset.email;
+      document.getElementById('d-body').textContent=card.dataset.body;
+      document.getElementById('d-target').textContent=card.dataset.target;
+      document.getElementById('d-target-type').textContent=card.dataset.type+' · 相关内容';
+      document.getElementById('d-time').textContent=card.dataset.time;
+      const st=statusMap[card.dataset.status]||statusMap.pending;
+      const p=document.getElementById('d-status');
+      p.textContent=st[0];p.className='pill '+st[1];
+      window._current=card;
+    }
+    cards.forEach(card=>{
+      card.addEventListener('click',e=>{
+        if(e.target.classList.contains('cm-check'))return;
+        loadDetail(card);
+      });
+      card.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();loadDetail(card)}});
+    });
+    loadDetail(cards[0]);
+    // 批准/拒绝：演示从队列移除
+    function act(card,label){
+      if(!card)return;
+      card.style.opacity='.35';
+      card.querySelectorAll('.pill').forEach(p=>p.remove());
+      setTimeout(()=>card.remove(),350);
+      // 切换详情到下一条
+      const idx=cards.indexOf(card);
+      const next=cards[idx+1]||cards[0];
+      if(next&&next!==card)setTimeout(()=>loadDetail(next),380);
+      updateBadge();
+    }
+    document.getElementById('approve-btn').addEventListener('click',()=>act(window._current,'已批准'));
+    document.getElementById('reject-btn').addEventListener('click',()=>act(window._current,'已拒绝'));
+    // 批量选择
+    const bulk=document.getElementById('bulk-bar');
+    function refreshBulk(){
+      const n=document.querySelectorAll('.cm-check:checked').length;
+      bulk.classList.toggle('show',n>0);
+      bulk.querySelector('b').textContent='已选择 '+n+' 条';
+    }
+    document.querySelectorAll('.cm-check').forEach(c=>c.addEventListener('change',e=>{e.stopPropagation();refreshBulk()}));
+    document.getElementById('bulk-clear').addEventListener('click',()=>{document.querySelectorAll('.cm-check').forEach(c=>c.checked=false);refreshBulk()});
+    document.getElementById('bulk-approve').addEventListener('click',()=>{
+      document.querySelectorAll('.cm-check:checked').forEach(c=>{const card=c.closest('.cm');card.style.opacity='.35';setTimeout(()=>card.remove(),350)});
+      refreshBulk();
+    });
+    function updateBadge(){
+      const pending=document.querySelectorAll('.cm[data-status=pending]').length;
+      const tab=document.querySelector('.tabs .chip');
+      tab.textContent='待审核 ('+pending+')';
+    }
+    // 状态标签切换
+    document.querySelectorAll('.tabs .chip').forEach((chip,i)=>chip.addEventListener('click',()=>{
+      document.querySelectorAll('.tabs .chip').forEach(c=>c.setAttribute('aria-pressed','false'));
+      chip.setAttribute('aria-pressed','true');
+    }));
+  </script>
+</body>
+</html>

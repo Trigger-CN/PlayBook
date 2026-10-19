@@ -1,0 +1,447 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------------
+ * 主题 token
+ * 基线决策 D-01：沿用 demo 与 docs/design/modules/01-visual-theme.md
+ * 的语义命名（canvas/ink/muted/surface/soft/lilac-base …）。
+ * 每个交互色都是 cap/base 成对定义，禁止运行时变暗生成底座。
+ * ------------------------------------------------------------------ */
+@layer base {
+  :root {
+    --canvas: #fffdf8;
+    --ink: #211522;
+    --muted: #765f73;
+    --line: rgba(72, 42, 62, 0.12);
+    --surface: #ffffff;
+    --soft: #fff0e6;
+    --shell: #ffc9cb;
+    --grid: rgba(72, 42, 62, 0.08);
+    --focus: #8dd1ff;
+    --shadow: 0 9px 0 rgba(114, 0, 47, 0.13);
+
+    --coral: #ff656c;
+    --coral-base: #72002f;
+    --pink: #f58bc5;
+    --pink-base: #9b078b;
+    --cream: #ffe5c5;
+    --cream-base: #b78122;
+    --mint: #82e2bf;
+    --mint-base: #146044;
+    --sky: #8dd1ff;
+    --sky-base: #1c6199;
+    --lilac: #e989ee;
+    --lilac-base: #90009d;
+
+    /* 立体按钮几何（D-02：以 12.3 与 demo 实测为准） */
+    --button-height: 52px;
+    --button-depth: 8px;
+    --button-radius: 16px;
+    --button-hover-lift: 3px;
+    --button-pressed-reveal: 2px;
+    --button-duration: 110ms;
+
+    /* 站点外壳 */
+    --header-height: 88px;
+  }
+
+  :root[data-theme='night'] {
+    --canvas: #21162c;
+    --ink: #fff9f1;
+    --muted: #cdbbd0;
+    --line: rgba(255, 230, 204, 0.14);
+    --surface: #31223d;
+    --soft: #3e2b4a;
+    --shell: #4a304f;
+    --grid: rgba(255, 230, 204, 0.08);
+    --focus: #82c7f2;
+    --shadow: 0 9px 0 rgba(15, 6, 21, 0.3);
+
+    --coral: #ff7379;
+    --coral-base: #5a082e;
+    --pink: #e995d8;
+    --pink-base: #70106e;
+    --cream: #ffdfaa;
+    --cream-base: #76511d;
+    --mint: #7fe0bd;
+    --mint-base: #104934;
+    --sky: #82c7f2;
+    --sky-base: #153e6e;
+    --lilac: #d49aff;
+    --lilac-base: #4b246e;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    color: var(--ink);
+    background-color: var(--canvas);
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 32px 32px;
+    font-family:
+      Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', 'Noto Sans SC', sans-serif;
+    transition:
+      background-color 0.25s,
+      color 0.25s;
+  }
+
+  :focus-visible {
+    outline: 4px solid var(--focus);
+    outline-offset: 4px;
+  }
+
+  /* 焦点环不能被卡片 overflow 裁剪 */
+  :target {
+    scroll-margin-top: calc(var(--header-height) + 24px);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      scroll-behavior: auto !important;
+      transition: none !important;
+      animation: none !important;
+    }
+  }
+}
+
+@layer components {
+  /* --------------------------------------------------------------
+   * ToyButton —— 项目唯一的立体按压按钮实现（D-02）
+   * 外层元素是深色底座与语义/焦点载体，内层 span 是明亮按钮面。
+   * 不变量：外层水平 padding 为 0；内外圆角一致；
+   * 厚度来自外层底部 padding 与按钮面负向位移，不用模糊阴影。
+   * -------------------------------------------------------------- */
+  .toy-button {
+    --cap: var(--button-cap, var(--coral));
+    --base: var(--button-base, var(--coral-base));
+    --height: var(--button-height);
+    --depth: var(--button-depth);
+    --radius: var(--button-radius);
+
+    position: relative;
+    display: inline-grid;
+    min-height: var(--height);
+    padding: 0 0 var(--depth);
+    border: 0;
+    border-radius: var(--radius);
+    color: inherit;
+    background: var(--base);
+    cursor: pointer;
+    font: inherit;
+    font-weight: 800;
+    text-align: center;
+    text-decoration: none;
+  }
+
+  .toy-button__top {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    min-height: var(--height);
+    padding: 0 20px;
+    border-radius: inherit;
+    color: inherit;
+    background: var(--cap);
+    transform: translateY(calc(-1 * var(--depth)));
+    transition:
+      transform var(--button-duration),
+      filter 150ms;
+  }
+
+  .toy-button:hover .toy-button__top {
+    transform: translateY(calc(-1 * (var(--depth) + var(--button-hover-lift))));
+    filter: brightness(1.035) saturate(1.05);
+  }
+
+  .toy-button:active .toy-button__top {
+    transform: translateY(calc(-1 * var(--button-pressed-reveal)));
+  }
+
+  .toy-button:disabled,
+  .toy-button[aria-disabled='true'] {
+    cursor: not-allowed;
+    opacity: 0.48;
+  }
+
+  .toy-button:disabled .toy-button__top,
+  .toy-button[aria-disabled='true'] .toy-button__top {
+    transform: translateY(-4px);
+    filter: none;
+  }
+
+  .toy-button[aria-busy='true'] {
+    cursor: progress;
+  }
+
+  /* 尺寸变体只覆盖 token，不复制状态规则 */
+  .toy-button--small {
+    --height: 42px;
+    --depth: 7px;
+    --radius: 13px;
+    font-size: 13px;
+  }
+
+  .toy-button--small .toy-button__top {
+    padding-inline: 14px;
+  }
+
+  .toy-button--large {
+    --height: 64px;
+    --depth: 11px;
+    --radius: 20px;
+    font-size: 17px;
+  }
+
+  .toy-button--large .toy-button__top {
+    padding-inline: 26px;
+  }
+
+  /* 色对变体 */
+  .toy-button--pink {
+    --cap: var(--pink);
+    --base: var(--pink-base);
+    color: #341624;
+  }
+
+  .toy-button--cream {
+    --cap: var(--cream);
+    --base: var(--cream-base);
+    color: #42220e;
+  }
+
+  .toy-button--mint {
+    --cap: var(--mint);
+    --base: var(--mint-base);
+    color: #10392b;
+  }
+
+  .toy-button--sky {
+    --cap: var(--sky);
+    --base: var(--sky-base);
+    color: #15344e;
+  }
+
+  .toy-button--lilac {
+    --cap: var(--lilac);
+    --base: var(--lilac-base);
+    color: #3c1440;
+  }
+
+  /* --------------------------------------------------------------
+   * ToyCard —— 与按钮同一套实体语言的内容卡
+   * 由具体场景通过 CSS 变量指定底座色，默认琥珀底座。
+   * -------------------------------------------------------------- */
+  .toy-card {
+    --card-base: var(--card-base-color, var(--coral-base));
+    display: block;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: var(--surface);
+    box-shadow: 0 8px 0 var(--card-base);
+    transform: translateY(-8px);
+    transition:
+      transform 120ms,
+      box-shadow 120ms,
+      filter 150ms;
+  }
+
+  a.toy-card,
+  button.toy-card {
+    cursor: pointer;
+  }
+
+  a.toy-card:hover,
+  button.toy-card:hover {
+    transform: translateY(-11px);
+    box-shadow: 0 11px 0 var(--card-base);
+    filter: brightness(1.02);
+  }
+
+  a.toy-card:active,
+  button.toy-card:active {
+    transform: translateY(-1px);
+    box-shadow: 0 1px 0 var(--card-base);
+  }
+
+  /* --------------------------------------------------------------
+   * TagChip —— 筛选/标签。选中态只换色对，不停留在物理按下位置。
+   * -------------------------------------------------------------- */
+  .tag-chip {
+    --chip-cap: var(--soft);
+    --chip-base: transparent;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--muted);
+    background: var(--chip-cap);
+    font-size: 11px;
+    font-weight: 750;
+    text-decoration: none;
+  }
+
+  .tag-chip[aria-pressed='true'],
+  .tag-chip[aria-current='page'],
+  .tag-chip[data-selected='true'] {
+    --chip-cap: color-mix(in srgb, var(--pink) 34%, var(--surface));
+    border-color: transparent;
+    color: var(--ink);
+  }
+
+  /* --------------------------------------------------------------
+   * 容器与页脚
+   * -------------------------------------------------------------- */
+  .page-shell {
+    width: min(1180px, calc(100% - 40px));
+    margin-inline: auto;
+    padding-bottom: 72px;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  @media (max-width: 600px) {
+    .page-shell {
+      width: min(100% - 28px, 1180px);
+    }
+  }
+}
+
+@layer components {
+  /* --------------------------------------------------------------
+   * MDX 正文排版：阅读区保持平面，不在正文内使用按压反馈。
+   * -------------------------------------------------------------- */
+  .prose-playbook > :first-child {
+    margin-top: 0;
+  }
+
+  .prose-playbook h2 {
+    margin: 2.5rem 0 0.9rem;
+    font-family: Georgia, 'Noto Serif SC', serif;
+    font-size: 1.625rem;
+    line-height: 1.25;
+    scroll-margin-top: calc(var(--header-height) + 16px);
+  }
+
+  .prose-playbook h3 {
+    margin: 1.9rem 0 0.7rem;
+    font-family: Georgia, 'Noto Serif SC', serif;
+    font-size: 1.25rem;
+    scroll-margin-top: calc(var(--header-height) + 16px);
+  }
+
+  .prose-playbook p {
+    margin: 0 0 1.15rem;
+  }
+
+  .prose-playbook ul,
+  .prose-playbook ol {
+    margin: 0 0 1.15rem;
+    padding-left: 1.5rem;
+  }
+
+  .prose-playbook li {
+    margin-bottom: 0.5rem;
+  }
+
+  .prose-playbook blockquote {
+    margin: 1.4rem 0;
+    padding: 1rem 1.25rem;
+    border-left: 6px solid var(--coral);
+    border-radius: 0 14px 14px 0;
+    background: var(--soft);
+    color: var(--muted);
+  }
+
+  .prose-playbook a {
+    color: var(--sky-base);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  :root[data-theme='night'] .prose-playbook a {
+    color: var(--sky);
+  }
+
+  .prose-playbook code {
+    padding: 2px 7px;
+    border-radius: 7px;
+    background: var(--soft);
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 0.88em;
+  }
+
+  .prose-playbook pre {
+    margin: 1.4rem 0;
+    padding: 1.1rem 1.2rem;
+    overflow-x: auto;
+    border-radius: 16px;
+    background: var(--soft);
+  }
+
+  .prose-playbook pre code {
+    padding: 0;
+    background: transparent;
+    font-size: 0.875rem;
+    line-height: 1.7;
+  }
+
+  .prose-playbook table {
+    display: block;
+    width: 100%;
+    margin: 1.4rem 0;
+    overflow-x: auto;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+
+  .prose-playbook th {
+    padding: 0.6rem 0.9rem;
+    background: var(--soft);
+    text-align: left;
+    white-space: nowrap;
+  }
+
+  .prose-playbook td {
+    padding: 0.6rem 0.9rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .prose-playbook img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 16px;
+  }
+
+  /* 标题自锚链接不显示额外装饰 */
+  .prose-playbook h2 a,
+  .prose-playbook h3 a {
+    color: inherit;
+    text-decoration: none;
+  }
+}

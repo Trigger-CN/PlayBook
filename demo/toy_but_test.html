@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="day">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="ToyButton 立体卡通按压按钮通用控件规格演示：扁平卡通矢量视觉系统 Phase 1。">
+<title>ToyButton · 立体卡通按钮通用控件</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&family=ZCOOL+KuaiLe&display=swap" rel="stylesheet">
+
+<style>
+/* =====================================================
+   1. 主题 Token（日间 / 晚间）—— 全站视觉语言基座
+   ===================================================== */
+:root {
+  --color-bg: #fff8ef;
+  --color-grid: rgba(80, 48, 32, 0.08);
+  --color-text: #15100d;
+  --color-text-muted: #6f5f52;
+  --color-border: rgba(80, 48, 32, 0.16);
+  --color-panel: #fffdf7;
+  --color-plate: #ffe4ea;
+
+  --color-primary-top: #ff6268;
+  --color-primary-base: #760030;
+  --color-secondary-top: #f58ac0;
+  --color-secondary-base: #a0009b;
+  --color-cream: #ffe7c7;
+  --color-cream-base: #c98a2e;
+  --color-mint: #8de6c2;
+  --color-mint-base: #2a8f68;
+  --color-sky: #8fd3ff;
+  --color-sky-base: #2a7cb3;
+
+  --radius-card: 28px;
+  --radius-button: 18px;
+
+  --switch-track: #ffd98a;
+  --switch-knob: #fff8ef;
+
+  --font-display: 'Baloo 2', 'ZCOOL KuaiLe', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-body: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+
+  color-scheme: light;
+}
+
+[data-theme="night"] {
+  --color-bg: #21162f;
+  --color-grid: rgba(255, 231, 199, 0.12);
+  --color-text: #fff8ef;
+  --color-text-muted: #b8a8c8;
+  --color-border: rgba(255, 231, 199, 0.2);
+  --color-panel: #2b2040;
+  --color-plate: #322148;
+
+  --color-primary-top: #ff6b7a;
+  --color-primary-base: #4b0829;
+  --color-secondary-top: #9b7bff;
+  --color-secondary-base: #2f1a6b;
+  --color-cream: #ffe0a8;
+  --color-cream-base: #a06a24;
+  --color-mint: #78e0c1;
+  --color-mint-base: #1f7a58;
+  --color-sky: #79c9ff;
+  --color-sky-base: #1f6da6;
+
+  --switch-track: #4a3a85;
+  --switch-knob: #ffe0a8;
+
+  color-scheme: dark;
+}
+
+/* =====================================================
+   2. 基础排版与页面骨架
+   ===================================================== */
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  /* 浅色网格背景：数字玩具盒的桌面 */
+  background-image:
+    linear-gradient(var(--color-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-grid) 1px, transparent 1px);
+  background-size: 28px 28px;
+  overflow-x: hidden;
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+section { margin: 72px 0; }
+
+h1, h2, h3 { font-family: var(--font-display); font-weight: 800; margin: 0; }
+
+p { line-height: 1.7; }
+
+code {
+  font-family: ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--color-grid);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+/* 区块标题：贴纸式徽章 + 标题 */
+.sec-head { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
+.sec-badge {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 15px;
+  color: #15100d;
+  background: var(--badge, var(--color-mint));
+  border-radius: 12px;
+  padding: 6px 12px;
+  transform: rotate(-3deg);
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.14);
+}
+.sec-head h2 { font-size: 30px; }
+.sec-desc { color: var(--color-text-muted); margin: 6px 0 28px 4px; max-width: 640px; }
+
+/* =====================================================
+   3. ToyButton 通用立体按压按钮组件
+   -----------------------------------------------------
+   结构：.toy-btn（外壳）> .toy-btn__base（深色底座）
+                        + .toy-btn__top（明亮上盖）
+   API：尺寸类 --sm / --md / --lg
+        变体类 --primary / --secondary / --sky / --mint / --cream
+        状态：:hover :active :focus-visible :disabled
+        文档展示强制类：.is-hover .is-pressed .is-focus
+   ===================================================== */
+.toy-btn {
+  --depth: 14px;      /* 底座露出深度 */
+  --radius: 18px;     /* 圆角 */
+  --btn-top: var(--color-primary-top);
+  --btn-base: var(--color-primary-base);
+  --btn-fg: #15100d;  /* 上盖文字统一暖黑，两主题对比稳定 */
+
+  position: relative;
+  display: inline-flex;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  font-family: var(--font-display);
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 深色实体底座：被上盖遮挡，只在底部露出 */
+.toy-btn__base {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  background: var(--btn-base);
+}
+
+/* 明亮上盖：承载文字与图标，预留底座露出空间 */
+.toy-btn__top {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 60px;
+  margin-bottom: var(--depth);
+  padding: 0 32px;
+  border-radius: var(--radius);
+  background: var(--btn-top);
+  color: var(--btn-fg);
+  font-size: 18px;
+  letter-spacing: 0.02em;
+  transform: translateY(0);
+  transition: transform 110ms cubic-bezier(0.2, 0, 0, 1), filter 110ms ease;
+}
+
+.toy-btn__top svg { width: 1.2em; height: 1.2em; flex: none; }
+
+/* --- 尺寸变体 --- */
+.toy-btn--sm { --depth: 9px; --radius: 14px; }
+.toy-btn--sm .toy-btn__top { min-height: 44px; padding: 0 18px; font-size: 15px; gap: 7px; }
+
+.toy-btn--md { --depth: 14px; --radius: 18px; }
+.toy-btn--md .toy-btn__top { min-height: 60px; padding: 0 32px; font-size: 18px; }
+
+.toy-btn--lg { --depth: 18px; --radius: 28px; }
+.toy-btn--lg .toy-btn__top { min-height: 84px; padding: 0 48px; font-size: 24px; gap: 12px; }
+
+/* --- 色彩变体 --- */
+.toy-btn--primary   { --btn-top: var(--color-primary-top);   --btn-base: var(--color-primary-base); }
+.toy-btn--secondary { --btn-top: var(--color-secondary-top); --btn-base: var(--color-secondary-base); }
+.toy-btn--sky       { --btn-top: var(--color-sky);           --btn-base: var(--color-sky-base); }
+.toy-btn--mint      { --btn-top: var(--color-mint);          --btn-base: var(--color-mint-base); }
+.toy-btn--cream     { --btn-top: var(--color-cream);         --btn-base: var(--color-cream-base); }
+
+/* --- 状态：悬停（上盖再上浮，底座略增厚） --- */
+.toy-btn:not(:disabled):hover .toy-btn__top {
+  transform: translateY(-2px);
+  filter: brightness(1.04);
+}
+
+/* --- 状态：按下（上盖下压，底座露出收窄到约 3px） --- */
+.toy-btn:not(:disabled):active .toy-btn__top {
+  transform: translateY(calc(var(--depth) - 3px)) scale(0.99);
+}
+
+/* --- 状态：键盘焦点（粗贴纸式描边，不依赖颜色变化） --- */
+.toy-btn:focus-visible,
+.toy-btn.is-focus {
+  outline: 4px solid var(--color-text);
+  outline-offset: 4px;
+}
+
+/* --- 状态：禁用（保留立体结构，去饱和、不可按压） --- */
+.toy-btn:disabled {
+  cursor: not-allowed;
+  filter: saturate(0.45) opacity(0.6);
+}
+.toy-btn:disabled .toy-btn__top { transform: none; }
+
+/* --- 文档展示用强制状态类（用于规格页静态呈现，勿在业务中使用） --- */
+.toy-btn.is-hover:not(.is-pressed):not(:disabled) .toy-btn__top {
+  transform: translateY(-2px);
+  filter: brightness(1.04);
+}
+.toy-btn.is-pressed:not(:disabled) .toy-btn__top {
+  transform: translateY(calc(var(--depth) - 3px)) scale(0.99);
+}
+
+/* =====================================================
+   4. 顶栏与主题开关
+   ===================================================== */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--color-bg);
+  border-bottom: 3px solid var(--color-border);
+  transition: background-color 200ms ease, border-color 200ms ease;
+}
+.topbar .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 16px;
+  padding-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand-mark { width: 24px; height: 28px; position: relative; flex: none; }
+.brand-mark::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 5px;
+  background: var(--color-primary-top);
+  border-radius: 8px;
+  transition: background-color 200ms ease;
+}
+.brand-mark::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 9px;
+  background: var(--color-primary-base);
+  border-radius: 8px;
+  transition: background-color 200ms ease;
+}
+.brand-name { font-family: var(--font-display); font-weight: 800; font-size: 19px; }
+.brand-sub {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  border-left: 3px solid var(--color-border);
+  padding-left: 12px;
+}
+
+/* 卡通主题开关：胶囊轨道 + 滑动圆钮 + 日/月图标 */
+.theme-switch {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 21px;
+}
+.theme-switch:focus-visible { outline: 4px solid var(--color-text); outline-offset: 4px; }
+.theme-switch__track {
+  display: block;
+  width: 78px;
+  height: 42px;
+  border-radius: 21px;
+  background: var(--switch-track);
+  border: 3px solid #15100d;
+  position: relative;
+  transition: background-color 200ms ease;
+}
+.theme-switch__knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--switch-knob);
+  transition: transform 150ms cubic-bezier(0.2, 0, 0, 1), background-color 200ms ease;
+}
+[data-theme="night"] .theme-switch__knob { transform: translateX(36px); }
+.theme-switch__icon {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 16px;
+  height: 16px;
+  color: #b06a10;
+  transition: opacity 150ms ease, transform 150ms ease;
+}
+.theme-switch__icon--moon { color: #4a3a85; opacity: 0; transform: rotate(-40deg) scale(0.6); }
+[data-theme="night"] .theme-switch__icon--sun  { opacity: 0; transform: rotate(40deg) scale(0.6); }
+[data-theme="night"] .theme-switch__icon--moon { opacity: 1; transform: none; }
+
+/* =====================================================
+   5. Hero 区
+   ===================================================== */
+.hero { position: relative; padding: 84px 0 20px; }
+.hero h1 { font-size: clamp(38px, 6vw, 58px); line-height: 1.15; }
+.hero .hero-line {
+  display: inline-block;
+  background: var(--color-secondary-top);
+  color: #15100d;
+  border-radius: 14px;
+  padding: 4px 14px;
+  transform: rotate(-2deg);
+  font-size: 0.55em;
+  vertical-align: middle;
+  margin-bottom: 14px;
+}
+.hero p.lead {
+  font-size: 18px;
+  color: var(--color-text-muted);
+  max-width: 560px;
+  margin: 18px 0 34px;
+}
+.hero-cta { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+.press-count {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--color-text-muted);
+  min-width: 90px;
+}
+
+/* =====================================================
+   6. 尺寸区
+   ===================================================== */
+.size-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 18px 0;
+  border-bottom: 2px dashed var(--color-border);
+}
+.size-row:last-child { border-bottom: 0; }
+.size-tag {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 14px;
+  background: var(--color-text);
+  color: var(--color-bg);
+  border-radius: 10px;
+  padding: 5px 10px;
+  min-width: 44px;
+  text-align: center;
+}
+.size-dim { font-size: 13px; color: var(--color-text-muted); margin-left: auto; }
+
+/* =====================================================
+   7. 色彩区与配色板
+   ===================================================== */
+.variant-row { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 36px; }
+
+.palette {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 18px;
+}
+.swatch {
+  background: var(--color-panel);
+  border: 3px solid var(--color-border);
+  border-radius: 22px;
+  padding: 18px;
+  transition: background-color 200ms ease, border-color 200ms ease;
+}
+.swatch__chip {
+  width: 64px;
+  position: relative;
+  margin-bottom: 14px;
+}
+.swatch__chip::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 7px;
+  border-radius: 12px;
+  background: var(--chip-base);
+}
+.swatch__chip-top {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 44px;
+  margin-bottom: 7px;
+  border-radius: 12px;
+  background: var(--chip-top);
+  font-family: var(--font-display);
+  font-weight: 800;
+  color: #15100d;
+}
+.swatch h3 { font-size: 16px; margin-bottom: 6px; }
+.swatch p {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+.palette-note { margin-top: 20px; font-size: 14px; color: var(--color-text-muted); }
+
+/* =====================================================
+   8. 状态区
+   ===================================================== */
+.state-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 22px 18px;
+}
+.state-item { margin: 0; text-align: center; }
+.state-item figcaption {
+  margin-top: 18px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+.state-item figcaption small { display: block; font-weight: 400; font-size: 12px; opacity: 0.75; }
+.state-note { margin-top: 26px; font-size: 14px; color: var(--color-text-muted); }
+
+/* =====================================================
+   9. 用例区
+   ===================================================== */
+.usecase-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 22px;
+}
+.demo-panel {
+  background: var(--color-panel);
+  border: 3px solid var(--color-border);
+  border-radius: var(--radius-card);
+  padding: 28px;
+  transition: background-color 200ms ease, border-color 200ms ease;
+}
+.demo-panel h3 { font-size: 19px; margin-bottom: 6px; }
+.demo-panel .demo-desc { font-size: 14px; color: var(--color-text-muted); margin: 0 0 22px; }
+
+.like-count { font-family: var(--font-display); font-weight: 700; }
+
+.quick-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  max-width: 100%;
+}
+
+/* 主 CTA 承托底板：外侧奶油/浅粉承托背景，增强玩具感 */
+.plate {
+  display: inline-block;
+  background: var(--color-plate);
+  border-radius: 32px;
+  padding: 26px 34px;
+  transition: background-color 200ms ease;
+}
+.plate-note { margin: 18px 0 0; font-size: 13px; color: var(--color-text-muted); }
+
+/* =====================================================
+   10. 页脚 / 提示浮层 / 贴纸装饰
+   ===================================================== */
+.site-footer {
+  margin-top: 90px;
+  border-top: 3px solid var(--color-border);
+  padding: 30px 0 46px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--color-text-muted);
+  transition: border-color 200ms ease;
+}
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translate(-50%, 16px) scale(0.94);
+  opacity: 0;
+  pointer-events: none;
+  background: var(--color-text);
+  color: var(--color-bg);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 15px;
+  border-radius: 999px;
+  padding: 13px 26px;
+  transition: transform 180ms cubic-bezier(0.2, 0, 0, 1), opacity 180ms ease;
+  z-index: 100;
+  max-width: calc(100vw - 40px);
+  text-align: center;
+}
+.toast.is-show { transform: translate(-50%, 0) scale(1); opacity: 1; }
+
+.sticker { position: absolute; pointer-events: none; z-index: 1; }
+.sticker--star-1 { top: 64px; right: 6%; color: var(--color-mint); animation: floaty 3.6s ease-in-out infinite alternate; }
+.sticker--star-2 { top: 230px; right: 16%; color: var(--color-cream); animation: floaty 4.4s 0.6s ease-in-out infinite alternate; }
+.sticker--dots { top: 120px; left: 55%; color: var(--color-secondary-top); animation: floaty 5s 1s ease-in-out infinite alternate; }
+.sticker--bubble { top: 300px; right: 4%; color: var(--color-sky); animation: floaty 4s 0.3s ease-in-out infinite alternate; }
+.sticker--spark { top: 90px; left: 3%; color: var(--color-sky); animation: floaty 4.2s 1.4s ease-in-out infinite alternate; }
+
+@keyframes floaty {
+  from { transform: translateY(0) rotate(-4deg); }
+  to   { transform: translateY(-10px) rotate(5deg); }
+}
+
+/* =====================================================
+   11. 响应式
+   ===================================================== */
+@media (max-width: 640px) {
+  section { margin: 54px 0; }
+  .hero { padding-top: 56px; }
+  .brand-sub { display: none; }
+  .size-dim { margin-left: 0; width: 100%; }
+  .sec-head h2 { font-size: 24px; }
+  .state-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* =====================================================
+   12. Reduced Motion 降级
+   ===================================================== */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+</style>
+
+<script>
+/* 尽早应用主题，避免刷新闪烁：localStorage > 系统偏好 */
+(function () {
+  'use strict';
+  var stored = null;
+  try { stored = window.localStorage.getItem('toy-theme'); } catch (err) {
+    console.warn('无法读取本地主题偏好：', err);
+  }
+  var theme = (stored === 'day' || stored === 'night')
+    ? stored
+    : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'night' : 'day');
+  document.documentElement.dataset.theme = theme;
+})();
+</script>
+</head>
+<body>
+
+<!-- ===================== 顶栏 ===================== -->
+<header class="topbar">
+  <div class="wrap">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">玩具盒 ToyBox</span>
+      <span class="brand-sub">Phase 1 · 组件规格演示</span>
+    </div>
+    <button id="themeToggle" class="theme-switch" role="switch" aria-checked="false" aria-label="切换日间或晚间主题">
+      <span class="theme-switch__track">
+        <span class="theme-switch__knob">
+          <svg class="theme-switch__icon theme-switch__icon--sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
+          </svg>
+          <svg class="theme-switch__icon theme-switch__icon--moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"></path>
+          </svg>
+        </span>
+      </span>
+    </button>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ===================== Hero ===================== -->
+  <section class="hero" id="top" aria-labelledby="heroTitle">
+    <svg class="sticker sticker--star-1" width="46" height="46" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z"></path>
+    </svg>
+    <svg class="sticker sticker--star-2" width="26" height="26" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z"></path>
+    </svg>
+    <svg class="sticker sticker--dots" width="30" height="72" viewBox="0 0 30 72" fill="currentColor" aria-hidden="true">
+      <circle cx="6" cy="6" r="5"></circle><circle cx="24" cy="26" r="4"></circle>
+      <circle cx="8" cy="46" r="5"></circle><circle cx="23" cy="66" r="3.5"></circle>
+    </svg>
+    <svg class="sticker sticker--bubble" width="58" height="58" viewBox="0 0 58 58" fill="none" stroke="currentColor" stroke-width="4" aria-hidden="true">
+      <circle cx="29" cy="29" r="24"></circle><circle cx="20" cy="20" r="5" fill="currentColor" stroke="none"></circle>
+    </svg>
+    <svg class="sticker sticker--spark" width="34" height="34" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z"></path>
+    </svg>
+
+    <span class="hero-line">视觉主题 · 核心控件</span>
+    <h1 id="heroTitle">ToyButton 通用立体按钮</h1>
+    <p class="lead">扁平卡通矢量视觉系统的第一块积木：上层是明亮色块，下层是深色实体底座，按下时上盖下压、底座露出收窄，形成干脆的物理按压反馈。换尺寸换一个类，换色换一个类，状态全部由伪类驱动。</p>
+
+    <div class="hero-cta">
+      <button id="pressBtn" class="toy-btn toy-btn--lg toy-btn--primary">
+        <span class="toy-btn__base" aria-hidden="true"></span>
+        <span class="toy-btn__top">按我试试</span>
+      </button>
+      <p class="press-count" id="pressCount" aria-live="polite">已按 0 次</p>
+    </div>
+  </section>
+
+  <!-- ===================== 尺寸 ===================== -->
+  <section aria-labelledby="sizesTitle">
+    <header class="sec-head">
+      <span class="sec-badge" style="--badge: var(--color-mint)">01</span>
+      <h2 id="sizesTitle">三档尺寸</h2>
+    </header>
+    <p class="sec-desc">上盖高度 / 底座深度 / 圆角全部由 <code>--depth</code> 与 <code>--radius</code> 参数化，尺寸类只改参数不改结构。小按钮用于点赞与标签，中按钮用于常规操作，大按钮用于首页主 CTA。</p>
+
+    <div class="size-row">
+      <span class="size-tag">sm</span>
+      <button class="toy-btn toy-btn--sm toy-btn--primary">
+        <span class="toy-btn__base" aria-hidden="true"></span>
+        <span class="toy-btn__top">小按钮</span>
+      </button>
+      <button class="toy-btn toy-btn--sm toy-btn--sky">
+        <span class="toy-btn__base" aria-hidden="true"></span>
+        <span class="toy-btn__top">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+          阅读
+        </span>
+      </button>
+      <span class="size-dim">上盖 44px · 底座 9px · 圆角 14px</span>
+    </div>
+
+    <div class="size-row">
+      <span class="size-tag">md</span>
+      <button class="toy-btn toy-btn--md toy-btn--primary">
+        <span class="toy-btn__base" aria-hidden="true"></span>
+        <span class="toy-btn__top">中等按钮</span>
+      </button>
+      <button class="toy-btn toy-btn--md toy-btn--sky">
+        <span class="toy-btn__base" aria-hidden="true"></span>
+        <span class="toy-btn__top">查看全部</span>
+      </button>
+      <span class="size-dim">上盖 60px · 底座 14px · 圆角 18px</span>
+    </div>
+
+    <div class="size-row">
+      <span class="size-tag">lg</span>
+      <button class="toy-btn toy-btn--lg toy-btn--primary">
+        <span class="toy-btn__base" aria-hidden="true"></span>
+        <span class="toy-btn__top">大号按钮</span>
+      </button>
+      <button class="toy-btn toy-btn--lg toy-btn--sky">
+        <span class="toy-btn__base" aria-hidden="true"></span>
+        <span class="toy-btn__top">开始探索</span>
+      </button>
+      <span class="size-dim">上盖 84px · 底座 18px · 圆角 28px</span>
+    </div>
+  </section>
+
+  <!-- ===================== 色彩 ===================== -->
+  <section aria-labelledby="variantsTitle">
+    <header class="sec-head">
+      <span class="sec-badge" style="--badge: var(--color-sky)">02</span>
+      <h2 id="variantsTitle">五种色彩变体</h2>
+    </header>
+    <p class="sec-desc">每个变体只做一件事：向组件注入 <code>--btn-top</code> 与 <code>--btn-base</code> 两个局部变量。日间与晚间主题各有一套 token 值，切换主题时所有按钮同步换色。</p>
+
+    <div class="variant-row">
+      <button class="toy-btn toy-btn--md toy-btn--primary">
+        <span class="toy-btn__base" aria-hidden="true"></span>
+        <span class="toy-btn__top">珊瑚红 primary</span>
+      </button>
+      <button class="toy-btn toy-btn--md toy-btn--secondary">
+        <span class="toy-btn__base" aria-hidden="true"></span>
+        <span class="toy-btn__top">泡泡粉 secondary</span>
+      </button>
+      <button class="toy-btn toy-btn--md toy-btn--sky">
+        <span class="toy-btn__base" aria-hidden="true"></span>
+        <span class="toy-btn__top">天空蓝 sky</span>
+      </button>
+      <button class="toy-btn toy-btn--md toy-btn--mint">
+        <span class="toy-btn__base" aria-hidden="true"></span>
+        <span class="toy-btn__top">薄荷绿 mint</span>
+      </button>
+      <button class="toy-btn toy-btn--md toy-btn--cream">
+        <span class="toy-btn__base" aria-hidden="true"></span>
+        <span class="toy-btn__top">奶油黄 cream</span>
+      </button>
+    </div>
+
+    <div class="palette">
+      <article class="swatch">
+        <div class="swatch__chip" style="--chip-top: var(--color-primary-top); --chip-base: var(--color-primary-base);">
+          <span class="swatch__chip-top">Aa</span>
+        </div>
+        <h3>primary 珊瑚红</h3>
+        <p>日 #ff6268 / #760030<br>夜 #ff6b7a / #4b0829</p>
+      </article>
+      <article class="swatch">
+        <div class="swatch__chip" style="--chip-top: var(--color-secondary-top); --chip-base: var(--color-secondary-base);">
+          <span class="swatch__chip-top">Aa</span>
+        </div>
+        <h3>secondary 泡泡粉</h3>
+        <p>日 #f58ac0 / #a0009b<br>夜 #9b7bff / #2f1a6b</p>
+      </article>
+      <article class="swatch">
+        <div class="swatch__chip" style="--chip-top: var(--color-sky); --chip-base: var(--color-sky-base);">
+          <span class="swatch__chip-top">Aa</span>
+        </div>
+        <h3>sky 天空蓝</h3>
+        <p>日 #8fd3ff / #2a7cb3<br>夜 #79c9ff / #1f6da6</p>
+      </article>
+      <article class="swatch">
+        <div class="swatch__chip" style="--chip-top: var(--color-mint); --chip-base: var(--color-mint-base);">
+          <span class="swatch__chip-top">Aa</span>
+        </div>
+        <h3>mint 薄荷绿</h3>
+        <p>日 #8de6c2 / #2a8f68<br>夜 #78e0c1 / #1f7a58</p>
+      </article>
+      <article class="swatch">
+        <div class="swatch__chip" style="--chip-top: var(--color-cream); --chip-base: var(--color-cream-base);">
+          <span class="swatch__chip-top">Aa</span>
+        </div>
+        <h3>cream 奶油黄</h3>
+        <p>日 #ffe7c7 / #c98a2e<br>夜 #ffe0a8 / #a06a24</p>
+      </article>
+    </div>
+    <p class="palette-note">注：上盖文字统一使用暖黑 <code>#15100d</code>（<code>--btn-fg</code>），在两套主题的高饱和色块上都能保持稳定对比；夜间主题是"夜晚玩具盒"，色块依旧高饱和，只是底座与背景更深。</p>
+  </section>
+
+  <!-- ===================== 状态 ===================== -->
+  <section aria-labelledby="statesTitle">
+    <header class="sec-head">
+      <span class="sec-badge" style="--badge: var(--color-secondary-top)">03</span>
+      <h2 id="statesTitle">五种交互状态</h2>
+    </header>
+    <p class="sec-desc">悬停时上盖上浮 2px、底座略增厚；按下时上盖下压、底座露出收窄到约 3px，位移过渡 110ms、干脆不拖沓；焦点用 4px 粗描边表达；禁用保留立体结构但去饱和且不可按压。</p>
+
+    <div class="state-grid">
+      <figure class="state-item">
+        <button class="toy-btn toy-btn--md toy-btn--primary">
+          <span class="toy-btn__base" aria-hidden="true"></span>
+          <span class="toy-btn__top">默认</span>
+        </button>
+        <figcaption>默认<small>default</small></figcaption>
+      </figure>
+      <figure class="state-item">
+        <button class="toy-btn toy-btn--md toy-btn--primary is-hover" tabindex="-1">
+          <span class="toy-btn__base" aria-hidden="true"></span>
+          <span class="toy-btn__top">悬停</span>
+        </button>
+        <figcaption>悬停<small>hover · 上浮 2px</small></figcaption>
+      </figure>
+      <figure class="state-item">
+        <button class="toy-btn toy-btn--md toy-btn--primary is-pressed" tabindex="-1">
+          <span class="toy-btn__base" aria-hidden="true"></span>
+          <span class="toy-btn__top">按下</span>
+        </button>
+        <figcaption>按下<small>active · 底座收窄</small></figcaption>
+      </figure>
+      <figure class="state-item">
+        <button class="toy-btn toy-btn--md toy-btn--primary is-focus" tabindex="-1">
+          <span class="toy-btn__base" aria-hidden="true"></span>
+          <span class="toy-btn__top">聚焦</span>
+        </button>
+        <figcaption>聚焦<small>focus · 4px 描边</small></figcaption>
+      </figure>
+      <figure class="state-item">
+        <button class="toy-btn toy-btn--md toy-btn--primary" disabled>
+          <span class="toy-btn__base" aria-hidden="true"></span>
+          <span class="toy-btn__top">禁用</span>
+        </button>
+        <figcaption>禁用<small>disabled · 不可按压</small></figcaption>
+      </figure>
+    </div>
+    <p class="state-note">提示：用 <kbd>Tab</kbd> 键浏览本页，可以看到每个真实按钮的键盘焦点环；本区前四个为规格展示（强制状态类），最后一个为真实禁用按钮。</p>
+  </section>
+
+  <!-- ===================== 用例 ===================== -->
+  <section aria-labelledby="usecasesTitle">
+    <header class="sec-head">
+      <span class="sec-badge" style="--badge: var(--color-cream)">04</span>
+      <h2 id="usecasesTitle">真实用例</h2>
+    </header>
+    <p class="sec-desc">点赞、评论提交、快捷跳转、主 CTA 复用同一套按钮语言——这正是"通用控件"的意义：交互各异，视觉同源。</p>
+
+    <div class="usecase-grid">
+      <div class="demo-panel">
+        <h3>点赞互动</h3>
+        <p class="demo-desc">点击切换已赞状态：变泡泡粉、心形填充、计数 +1；再次点击取消。</p>
+        <button id="likeBtn" class="toy-btn toy-btn--sm toy-btn--primary" aria-pressed="false">
+          <span class="toy-btn__base" aria-hidden="true"></span>
+          <span class="toy-btn__top">
+            <svg class="icon-heart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z"></path>
+            </svg>
+            赞 <span class="like-count" id="likeCount">128</span>
+          </span>
+        </button>
+      </div>
+
+      <div class="demo-panel">
+        <h3>评论提交</h3>
+        <p class="demo-desc">提交后短暂"提交中"，完成后提示进入待审核状态（模拟异步）。</p>
+        <button id="commentBtn" class="toy-btn toy-btn--md toy-btn--primary">
+          <span class="toy-btn__base" aria-hidden="true"></span>
+          <span class="toy-btn__top">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <span class="btn-label">发表评论</span>
+          </span>
+        </button>
+      </div>
+
+      <div class="demo-panel">
+        <h3>快捷跳转阵列</h3>
+        <p class="demo-desc">首页快捷栏形态：小号按钮阵列，自动换行，不产生横向溢出。</p>
+        <div class="quick-links">
+          <button class="toy-btn toy-btn--sm toy-btn--primary" data-quick-link="文章">
+            <span class="toy-btn__base" aria-hidden="true"></span>
+            <span class="toy-btn__top">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+              文章
+            </span>
+          </button>
+          <button class="toy-btn toy-btn--sm toy-btn--sky" data-quick-link="时间轴">
+            <span class="toy-btn__base" aria-hidden="true"></span>
+            <span class="toy-btn__top">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3.5 2"></path></svg>
+              时间轴
+            </span>
+          </button>
+          <button class="toy-btn toy-btn--sm toy-btn--mint" data-quick-link="关于我">
+            <span class="toy-btn__base" aria-hidden="true"></span>
+            <span class="toy-btn__top">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+              关于我
+            </span>
+          </button>
+          <button class="toy-btn toy-btn--sm toy-btn--cream" data-quick-link="GitHub">
+            <span class="toy-btn__base" aria-hidden="true"></span>
+            <span class="toy-btn__top">
+              <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.29 1.19-3.1-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.84 1.19 3.1 0 4.41-2.69 5.38-5.25 5.66.41.36.78 1.06.78 2.14 0 1.55-.01 2.8-.01 3.18 0 .31.21.68.8.56A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"></path></svg>
+              GitHub
+            </span>
+          </button>
+          <button class="toy-btn toy-btn--sm toy-btn--secondary" data-quick-link="RSS">
+            <span class="toy-btn__base" aria-hidden="true"></span>
+            <span class="toy-btn__top">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M4 11a9 9 0 0 1 9 9"></path><path d="M4 4a16 16 0 0 1 16 16"></path><circle cx="5.2" cy="18.8" r="1.6" fill="currentColor" stroke="none"></circle></svg>
+              RSS
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <div class="demo-panel">
+        <h3>主 CTA 与承托底板</h3>
+        <p class="demo-desc">大号按钮外侧包裹浅色承托底板，进一步强化"摆在桌上的玩具"质感。</p>
+        <div class="plate">
+          <button id="ctaBtn" class="toy-btn toy-btn--lg toy-btn--primary">
+            <span class="toy-btn__base" aria-hidden="true"></span>
+            <span class="toy-btn__top">
+              开始探索
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg>
+            </span>
+          </button>
+        </div>
+        <p class="plate-note">点击后回到页面顶部（平滑滚动，reduced-motion 下瞬时）。</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">扁平卡通矢量视觉系统 · Phase 1 组件规格演示 · 支持键盘操作与 reduced-motion</div>
+</footer>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var root = document.documentElement;
+
+  /* ---------- 主题切换：即时生效 + localStorage 持久化 ---------- */
+  var themeToggle = document.getElementById('themeToggle');
+
+  function applyTheme(theme) {
+    root.dataset.theme = theme;
+    themeToggle.setAttribute('aria-checked', String(theme === 'night'));
+  }
+  applyTheme(root.dataset.theme === 'night' ? 'night' : 'day');
+
+  themeToggle.addEventListener('click', function () {
+    var next = root.dataset.theme === 'night' ? 'day' : 'night';
+    applyTheme(next);
+    try {
+      window.localStorage.setItem('toy-theme', next);
+    } catch (err) {
+      console.warn('主题偏好未能持久化：', err);
+    }
+  });
+
+  /* ---------- 提示浮层 ---------- */
+  var toast = document.getElementById('toast');
+  var toastTimer = null;
+
+  function showToast(message) {
+    toast.textContent = message;
+    toast.classList.add('is-show');
+    if (toastTimer) { window.clearTimeout(toastTimer); }
+    toastTimer = window.setTimeout(function () {
+      toast.classList.remove('is-show');
+    }, 1800);
+  }
+
+  /* ---------- Hero：按压计数 ---------- */
+  var pressBtn = document.getElementById('pressBtn');
+  var pressCount = document.getElementById('pressCount');
+  var pressTotal = 0;
+
+  pressBtn.addEventListener('click', function () {
+    pressTotal += 1;
+    pressCount.textContent = '已按 ' + pressTotal + ' 次';
+  });
+
+  /* ---------- 用例：点赞 ---------- */
+  var likeBtn = document.getElementById('likeBtn');
+  var likeCount = document.getElementById('likeCount');
+  var liked = false;
+  var likeBaseCount = 128;
+
+  likeBtn.addEventListener('click', function () {
+    liked = !liked;
+    likeBtn.classList.toggle('is-liked', liked);
+    likeBtn.setAttribute('aria-pressed', String(liked));
+    likeCount.textContent = likeBaseCount + (liked ? 1 : 0);
+  });
+
+  /* ---------- 用例：评论提交（模拟异步） ---------- */
+  var commentBtn = document.getElementById('commentBtn');
+  var commentLabel = commentBtn.querySelector('.btn-label');
+
+  commentBtn.addEventListener('click', function () {
+    if (commentBtn.disabled) { return; }
+    commentBtn.disabled = true;
+    commentLabel.textContent = '提交中…';
+    window.setTimeout(function () {
+      commentBtn.disabled = false;
+      commentLabel.textContent = '发表评论';
+      showToast('评论已提交，等待审核（演示）');
+    }, 800);
+  });
+
+  /* ---------- 用例：快捷跳转 ---------- */
+  var quickButtons = document.querySelectorAll('[data-quick-link]');
+  Array.prototype.forEach.call(quickButtons, function (btn) {
+    btn.addEventListener('click', function () {
+      showToast('演示：前往「' + btn.getAttribute('data-quick-link') + '」');
+    });
+  });
+
+  /* ---------- 用例：主 CTA 回到顶部 ---------- */
+  document.getElementById('ctaBtn').addEventListener('click', function () {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+})();
+</script>
+
+<style>
+/* 点赞选中态：仅覆盖局部变量 + 心形填充，结构与尺寸不动 */
+.toy-btn.is-liked {
+  --btn-top: var(--color-secondary-top);
+  --btn-base: var(--color-secondary-base);
+}
+.toy-btn.is-liked .icon-heart { fill: currentColor; }
+</style>
+
+</body>
+</html>

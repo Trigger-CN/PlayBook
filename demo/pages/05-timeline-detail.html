@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Playbook 个人内容站 - 时间轴详情页设计 Demo">
+  <title>主题样式库建立 - Playbook 时间轴</title>
+  <style>
+    :root{--canvas:#fffdf8;--ink:#211522;--muted:#765f73;--line:rgba(72,42,62,.12);--surface:#fff;--soft:#fff0e6;--coral:#ff656c;--coral-base:#72002f;--pink:#f58bc5;--pink-base:#9b078b;--cream:#ffe5c5;--cream-base:#b78122;--mint:#82e2bf;--mint-base:#146044;--sky:#8dd1ff;--sky-base:#1c6199;--lilac:#e989ee;--lilac-base:#90009d;--shell:#ffc9cb;--grid:rgba(72,42,62,.08);--shadow:0 9px 0 rgba(114,0,47,.13)}
+    [data-theme=night]{--canvas:#21162c;--ink:#fff9f1;--muted:#cdbbd0;--line:rgba(255,230,204,.14);--surface:#31223d;--soft:#3e2b4a;--coral:#ff7379;--coral-base:#5a082e;--pink:#e995d8;--pink-base:#70106e;--cream:#ffdfaa;--cream-base:#76511d;--mint:#7fe0bd;--mint-base:#104934;--sky:#82c7f2;--sky-base:#153e6e;--lilac:#d49aff;--lilac-base:#4b246e;--shell:#4a304f;--grid:rgba(255,230,204,.08);--shadow:0 9px 0 rgba(15,6,21,.3)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background-color:var(--canvas);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:32px 32px;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Noto Sans SC",sans-serif;transition:background-color .25s,color .25s}button,input,textarea{font:inherit}button{color:inherit}a{color:inherit;text-decoration:none}
+    .skip{position:absolute;left:-9999px;z-index:50;padding:10px 16px;border-radius:0 0 12px 0;background:var(--coral);color:#fff;font-weight:800}.skip:focus{left:0}
+    .page{width:min(1180px,calc(100% - 40px));margin:auto;padding-bottom:72px}
+    .header{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:28px 0 24px}.brand{display:inline-flex;align-items:center;gap:11px;font-family:Georgia,"Noto Serif SC",serif;font-size:24px;font-weight:700}.mark{width:36px;height:36px;display:grid;place-items:center;border-radius:12px;background:var(--coral);box-shadow:0 6px 0 var(--coral-base);transform:rotate(-7deg)}.mark i{display:block;width:15px;height:15px;border:3px solid var(--ink);border-radius:50%}
+    .nav{display:flex;align-items:center;gap:18px;font-size:14px;font-weight:750}.nav a{color:var(--muted)}.nav a:hover{color:var(--ink)}.nav a[aria-current=page]{color:var(--ink);text-decoration:underline;text-decoration-color:var(--coral);text-decoration-thickness:3px;text-underline-offset:6px}
+    .toggle{position:relative;width:74px;height:39px;padding:0;border:0;border-radius:99px;cursor:pointer;background:transparent}.toggle:before{content:"";position:absolute;inset:6px 0 0;border-radius:inherit;background:var(--pink-base)}.toggle-top{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:4px 8px;border-radius:inherit;color:#28152b;background:var(--pink);transition:transform .12s}.knob{width:27px;height:27px;border-radius:50%;background:var(--cream);box-shadow:inset -3px -3px 0 rgba(100,61,0,.12);transition:transform .2s}[data-theme=night] .knob{transform:translateX(27px)}.toggle:active .toggle-top{transform:translateY(5px)}
+    :focus-visible{outline:4px solid var(--sky);outline-offset:4px}
+    .button{--cap:var(--coral);--base:var(--coral-base);position:relative;display:inline-grid;min-height:52px;place-items:center;padding:0 0 8px;border:0;border-radius:16px;cursor:pointer;background:var(--base);font-weight:850}.button>span{display:inline-flex;align-items:center;justify-content:center;gap:9px;width:100%;min-height:52px;padding:0 21px;border-radius:inherit;background:var(--cap);transform:translateY(-8px);transition:transform .11s,filter .15s}.button:hover>span{transform:translateY(-11px);filter:brightness(1.035) saturate(1.05)}.button:active>span{transform:translateY(-2px)}.button.pink{--cap:var(--pink);--base:var(--pink-base)}.button.cream{--cap:var(--cream);--base:var(--cream-base);color:#42220e}.button.mint{--cap:var(--mint);--base:var(--mint-base);color:#10392b}.button.sky{--cap:var(--sky);--base:var(--sky-base);color:#15344e}.button.small{min-height:42px;padding:0 0 7px;border-radius:13px;font-size:13px}.button.small>span{min-height:42px;padding:0 14px;transform:translateY(-7px)}.button.small:hover>span{transform:translateY(-9px)}.button.small:active>span{transform:translateY(-1px)}
+    footer{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:38px 4px 0;color:var(--muted);font-size:12px;font-weight:650}footer a{color:var(--muted)}footer a:hover{color:var(--ink)}
+    /* 时间轴详情 */
+    .crumbs{padding:6px 0 0;color:var(--muted);font-size:13px;font-weight:700}.crumbs a{color:var(--muted)}.crumbs a:hover{color:var(--ink)}.crumbs b{color:var(--ink)}
+    .item-head{padding:20px 0 6px;max-width:760px}.item-head .meta{display:flex;flex-wrap:wrap;gap:10px;align-items:center;color:var(--muted);font-size:13px;font-weight:700}
+    .type-chip{display:inline-block;padding:3px 10px;border-radius:99px;background:var(--pink);color:#341624;font-size:11px;font-weight:850}
+    .item-head h1{margin:14px 0 0;font-family:Georgia,"Noto Serif SC",serif;font-size:clamp(30px,4.6vw,44px);line-height:1.1}
+    .card{max-width:760px;margin:28px 0 0;padding:26px;border:1px solid var(--line);border-radius:24px;background:var(--surface);box-shadow:var(--shadow)}
+    .card p{margin:0 0 16px;font-size:15.5px;line-height:1.85}.card p:last-child{margin-bottom:0}
+    .gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:22px 0 4px}.g{display:grid;place-items:center;min-height:130px;border-radius:15px;background:var(--soft);font-size:40px;box-shadow:0 6px 0 var(--line)}.g.main{grid-column:1/-1;min-height:200px;background:var(--shell);font-size:64px;box-shadow:0 7px 0 var(--cream-base)}
+    .external-row{display:flex;flex-wrap:wrap;gap:14px;margin-top:22px}
+    .adjacent{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:760px;margin:26px 0 0}
+    .adj{--card-base:var(--mint-base);display:block;padding:16px 18px;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:0 7px 0 var(--card-base);transform:translateY(-7px);transition:transform .12s,box-shadow .12s}.adj.next{--card-base:var(--sky-base)}.adj:hover{transform:translateY(-10px);box-shadow:0 10px 0 var(--card-base)}.adj:active{transform:translateY(-1px);box-shadow:0 1px 0 var(--card-base)}.adj small{display:block;color:var(--muted);font-size:11px;font-weight:800;margin-bottom:5px}.adj b{font-size:15px;line-height:1.35}
+    .interaction{max-width:760px;margin:44px 0 0;padding:22px;border:1px solid var(--line);border-radius:22px;background:var(--surface)}
+    .inter-row{display:flex;flex-wrap:wrap;gap:14px;align-items:center}.views{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:99px;background:var(--soft);color:var(--muted);font-size:13px;font-weight:800}.views b{color:var(--ink)}
+    .comments{max-width:760px;margin:30px 0 0}.comments h2{font-family:Georgia,"Noto Serif SC",serif;font-size:22px}
+    .comment{display:grid;grid-template-columns:42px 1fr;gap:13px;padding:16px 0;border-top:1px solid var(--line)}.comment:first-of-type{border-top:0}.avatar{display:grid;width:42px;height:42px;place-items:center;border-radius:50%;background:var(--sky);color:#17354e;font-size:13px;font-weight:900}.comment:nth-of-type(2) .avatar{background:var(--mint);color:#0d3826}.comment b{font-size:13.5px}.comment time{color:var(--muted);font-size:11px;font-weight:800;margin-left:8px}.comment p{margin:5px 0 0;color:var(--muted);font-size:13.5px;line-height:1.65}
+    .form{margin-top:20px}.form label{display:block;margin-bottom:7px;font-size:12px;font-weight:750}.form .name-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}.form input,.form textarea{width:100%;padding:11px;border:2px solid var(--line);border-radius:13px;color:var(--ink);background:var(--soft)}.form input:focus,.form textarea:focus{outline:none;border-color:var(--sky)}.form textarea{min-height:80px;resize:vertical}.form-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:14px;color:var(--muted);font-size:11px;font-weight:700}.form-msg{display:none;margin-top:10px;padding:10px 14px;border-radius:12px;background:color-mix(in srgb,var(--mint) 30%,var(--surface));font-size:13px;font-weight:700}.form-msg.show{display:block}
+    @media(max-width:600px){.page{width:min(100% - 28px,1180px)}.header{padding-top:18px}.nav a{display:none}.adjacent{grid-template-columns:1fr}.gallery{grid-template-columns:1fr 1fr}.form .name-row{grid-template-columns:1fr}footer{display:block;line-height:1.7}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">跳到主内容</a>
+  <main class="page" id="main">
+    <header class="header">
+      <a class="brand" href="01-home.html"><span class="mark"><i></i></span>Playbook</a>
+      <nav class="nav" aria-label="主导航">
+        <a href="01-home.html">首页</a>
+        <a href="02-post-discovery.html">文章</a>
+        <a href="04-timeline-list.html" aria-current="page">时间轴</a>
+        <a href="06-about.html">关于</a>
+        <a href="07-stats.html">统计</a>
+        <button class="toggle" id="theme-toggle" type="button" aria-label="切换晚间主题" aria-pressed="false"><span class="toggle-top">☼<span class="knob"></span>☾</span></button>
+      </nav>
+    </header>
+
+    <nav class="crumbs" aria-label="面包屑"><a href="01-home.html">首页</a> / <a href="04-timeline-list.html">时间轴</a> / <b>主题样式库建立</b></nav>
+
+    <article>
+      <header class="item-head">
+        <div class="meta"><span class="type-chip">✦ RELEASE</span><time datetime="2026-07-17">2026.07.17 发生</time><span>·</span><span>更新于 2026.07.18</span></div>
+        <h1>主题样式库建立</h1>
+      </header>
+
+      <section class="card" aria-label="节点内容">
+        <p>玩具盒主题系统正式定稿：六个交互色对、两套主题变量、统一的按压结构和焦点规范。从今天起，所有公开页面与后台控件都从同一组 token 取色。</p>
+        <p>这次最大的收获是把「深度」从阴影还原成了结构——按钮面浮在底座上，按下时落回去，全程只动 transform。夜间主题则重新调校了所有底座的明度，让它们在深色画布上依然站得稳。</p>
+        <div class="gallery" aria-label="节点图片">
+          <div class="g main" role="img" aria-label="主题系统总览截图（示意）">✹</div>
+          <div class="g" role="img" aria-label="日间主题色板（示意）">☼</div>
+          <div class="g" role="img" aria-label="夜间主题色板（示意）">☾</div>
+        </div>
+        <div class="external-row">
+          <a class="button small sky" href="https://github.com" target="_blank" rel="noopener noreferrer"><span>查看设计令牌 ↗ github.com</span></a>
+          <a class="button small mint" href="03-post-detail.html"><span>相关文章</span></a>
+        </div>
+      </section>
+
+      <nav class="adjacent" aria-label="相邻节点">
+        <a class="adj prev" href="05-timeline-detail.html"><small>← 上一条 · 2026.07.14</small><b>文章阅读体验调整</b></a>
+        <a class="adj next" href="05-timeline-detail.html"><small>下一条 · 2026.07.09 →</small><b>组件状态页上线</b></a>
+      </nav>
+
+      <section class="interaction" aria-label="互动">
+        <div class="inter-row">
+          <span class="views">◔ 浏览 <b>342</b></span>
+          <button class="button small like-btn" id="like-btn" type="button" aria-pressed="false"><span>♥ 点赞 <b id="like-count">24</b></span></button>
+          <button class="button small sky" type="button"><span>● 评论 5</span></button>
+        </div>
+      </section>
+
+      <section class="comments" aria-labelledby="comments-title">
+        <h2 id="comments-title">评论 <span style="color:var(--muted);font-size:14px">(5)</span></h2>
+        <div>
+          <article class="comment"><span class="avatar" aria-hidden="true">KX</span><div><b>Kexin</b><time>2026.07.17</time><p>六个色对的命名太好记了，cap/base 一看就懂。</p></div></article>
+          <article class="comment"><span class="avatar" aria-hidden="true">WL</span><div><b>Weilun</b><time>2026.07.18</time><p>夜间主题的底座明度确实讲究，比简单压暗高级多了。</p></div></article>
+        </div>
+        <form class="form" onsubmit="return false">
+          <label for="comment">留下你的想法</label>
+          <div class="name-row">
+            <input id="name" type="text" placeholder="昵称（必填）">
+            <input id="email" type="email" placeholder="邮箱（选填）">
+          </div>
+          <textarea id="comment" placeholder="写一段友善的评论…"></textarea>
+          <div class="form-actions">
+            <span>评论将在审核后显示 · 不公开邮箱</span>
+            <button class="button small pink" type="button" id="submit-comment"><span>发送评论</span></button>
+          </div>
+          <p class="form-msg" id="form-msg" role="status">✓ 评论已提交，将在审核后显示。</p>
+        </form>
+      </section>
+    </article>
+
+    <footer>
+      <span>© 2026 Playbook · 用心按下每一次更新</span>
+      <span><a href="04-timeline-list.html">← 返回时间轴</a> · <a href="index.html">Demo 索引</a></span>
+    </footer>
+  </main>
+  <script>
+    const root=document.documentElement;
+    const toggle=document.getElementById('theme-toggle');
+    const saved=localStorage.getItem('playbook-theme');
+    const initial=saved||(matchMedia('(prefers-color-scheme: dark)').matches?'night':'light');
+    function setTheme(theme){root.dataset.theme=theme;if(toggle){toggle.setAttribute('aria-pressed',String(theme==='night'));toggle.setAttribute('aria-label',theme==='night'?'切换日间主题':'切换晚间主题')}localStorage.setItem('playbook-theme',theme)}
+    setTheme(initial);
+    if(toggle)toggle.addEventListener('click',()=>setTheme(root.dataset.theme==='night'?'light':'night'));
+    const likeBtn=document.getElementById('like-btn');
+    const likeCount=document.getElementById('like-count');
+    let liked=false,count=24;
+    likeBtn.addEventListener('click',()=>{
+      liked=!liked;count+=liked?1:-1;
+      likeCount.textContent=count;
+      likeBtn.setAttribute('aria-pressed',String(liked));
+    });
+    const submitBtn=document.getElementById('submit-comment');
+    const formMsg=document.getElementById('form-msg');
+    submitBtn.addEventListener('click',()=>{
+      submitBtn.disabled=true;
+      submitBtn.querySelector('span').textContent='发送中…';
+      setTimeout(()=>{
+        submitBtn.disabled=false;
+        submitBtn.querySelector('span').textContent='发送评论';
+        formMsg.classList.add('show');
+        document.getElementById('comment').value='';
+        setTimeout(()=>formMsg.classList.remove('show'),4000);
+      },800);
+    });
+  </script>
+</body>
+</html>

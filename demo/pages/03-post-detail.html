@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Playbook 个人内容站 - 文章详情页设计 Demo">
+  <title>我把个人网站做成了一台可玩的记录机 - Playbook</title>
+  <style>
+    :root{--canvas:#fffdf8;--ink:#211522;--muted:#765f73;--line:rgba(72,42,62,.12);--surface:#fff;--soft:#fff0e6;--coral:#ff656c;--coral-base:#72002f;--pink:#f58bc5;--pink-base:#9b078b;--cream:#ffe5c5;--cream-base:#b78122;--mint:#82e2bf;--mint-base:#146044;--sky:#8dd1ff;--sky-base:#1c6199;--lilac:#e989ee;--lilac-base:#90009d;--shell:#ffc9cb;--grid:rgba(72,42,62,.08);--shadow:0 9px 0 rgba(114,0,47,.13)}
+    [data-theme=night]{--canvas:#21162c;--ink:#fff9f1;--muted:#cdbbd0;--line:rgba(255,230,204,.14);--surface:#31223d;--soft:#3e2b4a;--coral:#ff7379;--coral-base:#5a082e;--pink:#e995d8;--pink-base:#70106e;--cream:#ffdfaa;--cream-base:#76511d;--mint:#7fe0bd;--mint-base:#104934;--sky:#82c7f2;--sky-base:#153e6e;--lilac:#d49aff;--lilac-base:#4b246e;--shell:#4a304f;--grid:rgba(255,230,204,.08);--shadow:0 9px 0 rgba(15,6,21,.3)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background-color:var(--canvas);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:32px 32px;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Noto Sans SC",sans-serif;transition:background-color .25s,color .25s}button,input,textarea{font:inherit}button{color:inherit}a{color:inherit;text-decoration:none}
+    .skip{position:absolute;left:-9999px;z-index:50;padding:10px 16px;border-radius:0 0 12px 0;background:var(--coral);color:#fff;font-weight:800}.skip:focus{left:0}
+    .page{width:min(1180px,calc(100% - 40px));margin:auto;padding-bottom:72px}
+    .header{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:28px 0 24px}.brand{display:inline-flex;align-items:center;gap:11px;font-family:Georgia,"Noto Serif SC",serif;font-size:24px;font-weight:700}.mark{width:36px;height:36px;display:grid;place-items:center;border-radius:12px;background:var(--coral);box-shadow:0 6px 0 var(--coral-base);transform:rotate(-7deg)}.mark i{display:block;width:15px;height:15px;border:3px solid var(--ink);border-radius:50%}
+    .nav{display:flex;align-items:center;gap:18px;font-size:14px;font-weight:750}.nav a{color:var(--muted)}.nav a:hover{color:var(--ink)}.nav a[aria-current=page]{color:var(--ink);text-decoration:underline;text-decoration-color:var(--coral);text-decoration-thickness:3px;text-underline-offset:6px}
+    .toggle{position:relative;width:74px;height:39px;padding:0;border:0;border-radius:99px;cursor:pointer;background:transparent}.toggle:before{content:"";position:absolute;inset:6px 0 0;border-radius:inherit;background:var(--pink-base)}.toggle-top{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:4px 8px;border-radius:inherit;color:#28152b;background:var(--pink);transition:transform .12s}.knob{width:27px;height:27px;border-radius:50%;background:var(--cream);box-shadow:inset -3px -3px 0 rgba(100,61,0,.12);transition:transform .2s}[data-theme=night] .knob{transform:translateX(27px)}.toggle:active .toggle-top{transform:translateY(5px)}
+    :focus-visible{outline:4px solid var(--sky);outline-offset:4px}
+    .button{--cap:var(--coral);--base:var(--coral-base);position:relative;display:inline-grid;min-height:52px;place-items:center;padding:0 0 8px;border:0;border-radius:16px;cursor:pointer;background:var(--base);font-weight:850;color:var(--ink)}.button>span{display:inline-flex;align-items:center;justify-content:center;gap:9px;width:100%;min-height:52px;padding:0 21px;border-radius:inherit;background:var(--cap);transform:translateY(-8px);transition:transform .11s,filter .15s}.button:hover>span{transform:translateY(-11px);filter:brightness(1.035) saturate(1.05)}.button:active>span{transform:translateY(-2px)}.button.pink{--cap:var(--pink);--base:var(--pink-base)}.button.cream{--cap:var(--cream);--base:var(--cream-base);color:#42220e}.button.mint{--cap:var(--mint);--base:var(--mint-base);color:#10392b}.button.sky{--cap:var(--sky);--base:var(--sky-base);color:#15344e}.button.small{min-height:42px;padding:0 0 7px;border-radius:13px;font-size:13px}.button.small>span{min-height:42px;padding:0 14px;transform:translateY(-7px)}.button.small:hover>span{transform:translateY(-9px)}.button.small:active>span{transform:translateY(-1px)}.button:disabled{cursor:not-allowed;opacity:.48}.button:disabled>span{transform:translateY(-4px)}
+    footer{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:38px 4px 0;color:var(--muted);font-size:12px;font-weight:650}footer a{color:var(--muted)}footer a:hover{color:var(--ink)}
+    /* 文章详情 */
+    .crumbs{padding:6px 0 0;color:var(--muted);font-size:13px;font-weight:700}.crumbs a{color:var(--muted)}.crumbs a:hover{color:var(--ink)}.crumbs b{color:var(--ink)}
+    .post-head{padding:22px 0 8px;max-width:760px}.post-head .meta{display:flex;flex-wrap:wrap;gap:10px;align-items:center;color:var(--muted);font-size:13px;font-weight:700}.post-head .meta .tag{background:color-mix(in srgb,var(--coral) 25%,var(--surface))}
+    .post-head h1{margin:14px 0 12px;font-family:Georgia,"Noto Serif SC",serif;font-size:clamp(32px,5vw,50px);line-height:1.08}
+    .summary{margin:0;max-width:640px;color:var(--muted);font-size:16px;line-height:1.75}
+    .cover{display:grid;place-items:center;min-height:280px;margin:30px 0;border-radius:26px;background:var(--shell);box-shadow:var(--shadow);font-size:88px}
+    .cover figcaption{margin-top:12px;color:var(--muted);font-size:12px;font-weight:700;text-align:center}
+    .reading{display:grid;grid-template-columns:64px minmax(0,720px) 220px;gap:26px;justify-content:center;align-items:start;margin-top:14px}
+    .sharebar{position:sticky;top:24px;display:grid;gap:12px;justify-items:center}
+    .round{position:relative;width:52px;height:52px;padding:0 0 6px;border:0;border-radius:50%;cursor:pointer;background:var(--coral-base)}.round:before{content:"↩";position:absolute;inset:0;display:grid;place-items:center;border-radius:50%;background:var(--coral);transform:translateY(-6px);font-size:19px;transition:transform .12s}.round.sky{background:var(--sky-base)}.round.sky:before{background:var(--sky);content:"⇱"}.round.mint{background:var(--mint-base)}.round.mint:before{background:var(--mint);content:"⧉"}.round:hover:before{transform:translateY(-8px)}.round:active:before{transform:translateY(-1px)}.sharebar .cap{color:var(--muted);font-size:10px;font-weight:800}
+    .article{font-size:16px;line-height:1.85}.article>:first-child{margin-top:0}
+    .article h2{margin:40px 0 14px;font-family:Georgia,"Noto Serif SC",serif;font-size:26px;line-height:1.25;scroll-margin-top:96px}.article h3{margin:30px 0 10px;font-family:Georgia,"Noto Serif SC",serif;font-size:20px;scroll-margin-top:96px}.article p{margin:0 0 18px}.article ul{margin:0 0 18px;padding-left:24px}.article li{margin-bottom:8px}.article blockquote{margin:22px 0;padding:16px 20px;border-left:6px solid var(--coral);border-radius:0 14px 14px 0;background:var(--soft);color:var(--muted);font-size:15px}.article code{padding:2px 7px;border-radius:7px;background:var(--soft);color:var(--ink);font-family:ui-monospace,Consolas,monospace;font-size:.88em}.article a.inline{color:var(--sky-base);text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:3px}[data-theme=night] .article a.inline{color:var(--sky)}
+    .code-block{position:relative;margin:22px 0;border-radius:16px;background:var(--shell);box-shadow:var(--shadow);overflow:hidden}.code-block header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;color:rgba(33,21,34,.75);font-size:11px;font-weight:800}.code-block pre{margin:0;padding:16px 18px;overflow-x:auto;border-top:2px dashed rgba(67,26,53,.2);font-family:ui-monospace,Consolas,monospace;font-size:13.5px;line-height:1.7;color:#2b1722}.copy-btn{position:relative;padding:0 0 5px;border:0;border-radius:10px;cursor:pointer;background:var(--coral-base);color:#fff;font-size:11px;font-weight:800}.copy-btn span{display:inline-block;padding:5px 11px;border-radius:inherit;background:var(--coral);transform:translateY(-5px);transition:transform .1s}.copy-btn:hover span{transform:translateY(-6px)}.copy-btn:active span{transform:translateY(-1px)}
+    .table-wrap{overflow-x:auto;margin:22px 0;border:1px solid var(--line);border-radius:16px}.article table{width:100%;border-collapse:collapse;font-size:14px}.article th{padding:11px 14px;background:var(--soft);text-align:left;font-size:12.5px}.article td{padding:11px 14px;border-top:1px solid var(--line)}
+    .toc{position:sticky;top:24px;padding:18px;border:1px solid var(--line);border-radius:18px;background:var(--surface)}.toc h2{margin:0 0 12px;font-size:13px;letter-spacing:.06em}.toc ol{margin:0;padding-left:18px;color:var(--muted);font-size:13px;line-height:2}.toc a{color:var(--muted)}.toc a:hover{color:var(--ink)}.toc a.active{color:var(--ink);font-weight:800}
+    .end-info{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px;max-width:720px;margin:36px 0 0;padding:16px 20px;border:1px solid var(--line);border-radius:16px;background:var(--soft)}.end-info .tags{display:flex;flex-wrap:wrap;gap:7px}.tag{padding:4px 8px;border-radius:999px;background:var(--soft);color:var(--muted);font-size:11px;font-weight:750}
+    .related{max-width:720px;margin:44px 0 0}.related h2{font-family:Georgia,"Noto Serif SC",serif;font-size:22px}.related-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+    .rel{--card-base:var(--mint-base);display:block;padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--surface);box-shadow:0 7px 0 var(--card-base);transform:translateY(-7px);transition:transform .12s,box-shadow .12s}.rel+.rel{--card-base:var(--sky-base)}.rel:hover{transform:translateY(-10px);box-shadow:0 10px 0 var(--card-base)}.rel:active{transform:translateY(-1px);box-shadow:0 1px 0 var(--card-base)}.rel b{font-size:14.5px;line-height:1.4}.rel small{display:block;margin-top:6px;color:var(--muted);font-size:11.5px;font-weight:700}
+    .interaction{max-width:720px;margin:50px 0 0;padding:24px;border:1px solid var(--line);border-radius:22px;background:var(--surface);box-shadow:var(--shadow)}
+    .inter-row{display:flex;flex-wrap:wrap;gap:14px;align-items:center}.views{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:99px;background:var(--soft);color:var(--muted);font-size:13px;font-weight:800}.views b{color:var(--ink)}
+    .like-btn.liked .heart{color:#fff}
+    .comments{max-width:720px;margin:34px 0 0}.comments h2{font-family:Georgia,"Noto Serif SC",serif;font-size:22px}.comment-list{display:grid;gap:0}.comment{display:grid;grid-template-columns:42px 1fr;gap:13px;padding:16px 0;border-top:1px solid var(--line)}.comment:first-child{border-top:0}.avatar{display:grid;width:42px;height:42px;place-items:center;border-radius:50%;background:var(--sky);color:#17354e;font-size:13px;font-weight:900}.comment:nth-child(2) .avatar{background:var(--mint);color:#0d3826}.comment:nth-child(3) .avatar{background:var(--cream);color:#4a2d11}.comment b{font-size:13.5px}.comment time{color:var(--muted);font-size:11px;font-weight:800;margin-left:8px}.comment p{margin:5px 0 0;color:var(--muted);font-size:13.5px;line-height:1.65}
+    .form{margin-top:22px}.form label{display:block;margin-bottom:7px;font-size:12px;font-weight:750}.form .name-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}.form input,.form textarea{width:100%;padding:11px;border:2px solid var(--line);border-radius:13px;color:var(--ink);background:var(--soft)}.form input:focus,.form textarea:focus{outline:none;border-color:var(--sky)}.form textarea{min-height:84px;resize:vertical}.form-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:14px;color:var(--muted);font-size:11px;font-weight:700}.form-msg{display:none;margin-top:10px;padding:10px 14px;border-radius:12px;background:color-mix(in srgb,var(--mint) 30%,var(--surface));font-size:13px;font-weight:700}.form-msg.show{display:block}
+    @media(max-width:1000px){.reading{grid-template-columns:minmax(0,720px)}.sharebar{position:static;grid-template-columns:repeat(3,auto);justify-content:start;gap:16px}.toc{display:none}.mobile-toc{display:block!important}}
+    .mobile-toc{display:none;margin:20px 0;padding:14px 16px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
+    @media(max-width:600px){.page{width:min(100% - 28px,1180px)}.header{padding-top:18px}.nav a{display:none}.post-head h1{font-size:30px}.related-grid{grid-template-columns:1fr}.form .name-row{grid-template-columns:1fr}footer{display:block;line-height:1.7}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">跳到主内容</a>
+  <main class="page" id="main">
+    <header class="header">
+      <a class="brand" href="01-home.html"><span class="mark"><i></i></span>Playbook</a>
+      <nav class="nav" aria-label="主导航">
+        <a href="01-home.html">首页</a>
+        <a href="02-post-discovery.html" aria-current="page">文章</a>
+        <a href="04-timeline-list.html">时间轴</a>
+        <a href="06-about.html">关于</a>
+        <a href="07-stats.html">统计</a>
+        <button class="toggle" id="theme-toggle" type="button" aria-label="切换晚间主题" aria-pressed="false"><span class="toggle-top">☼<span class="knob"></span>☾</span></button>
+      </nav>
+    </header>
+
+    <nav class="crumbs" aria-label="面包屑"><a href="01-home.html">首页</a> / <a href="02-post-discovery.html">文章</a> / <b>可玩的记录机</b></nav>
+
+    <article>
+      <header class="post-head">
+        <div class="meta"><a class="tag" href="02-post-discovery.html">设计系统</a><span>2026.07.17 发布</span><span>·</span><span>更新于 2026.07.18</span><span>·</span><span>约 8 分钟</span></div>
+        <h1>我把个人网站做成了一台可玩的记录机</h1>
+        <p class="summary">从按钮触感开始，为长期内容建立一组会说话的视觉规则：深度来自按钮面与底座的组合，反馈来自明确但不聒噪的位移。</p>
+      </header>
+
+      <figure class="cover" aria-label="文章封面">
+        <span aria-hidden="true">✹</span>
+        <figcaption>封面：玩具控制台的实体按键灵感</figcaption>
+      </figure>
+
+      <div class="mobile-toc">
+        <details>
+          <summary style="cursor:pointer;font-weight:800;font-size:14px">本文目录</summary>
+          <ol style="margin:10px 0 0;padding-left:20px;color:var(--muted);font-size:13px;line-height:2">
+            <li><a href="#s1">为什么从按钮开始</a></li>
+            <li><a href="#s2">六色角色与底座</a></li>
+            <li><a href="#s3">一次按压的解剖</a></li>
+            <li><a href="#s4">克制的代价与回报</a></li>
+          </ol>
+        </details>
+      </div>
+
+      <div class="reading">
+        <aside class="sharebar" aria-label="分享操作">
+          <button class="round" type="button" onclick="history.length>1?history.back():location.href='02-post-discovery.html'" aria-label="返回上一页"></button>
+          <span class="cap" aria-hidden="true">返回</span>
+          <button class="round sky" type="button" id="share-btn" aria-label="分享本文"></button>
+          <span class="cap" aria-hidden="true">分享</span>
+          <button class="round mint" type="button" id="copy-link" aria-label="复制链接"></button>
+          <span class="cap" aria-hidden="true">复制</span>
+        </aside>
+
+        <div class="article" id="article-body">
+          <p>大多数个人网站的问题不是内容不够，而是<strong>界面没有性格</strong>。我想要的是一个每次打开都想按一按的地方——于是有了这套「玩具盒」视觉系统。</p>
+
+          <h2 id="s1">为什么从按钮开始</h2>
+          <p>实体按键的魅力在于：按下之前你就知道它会被按下。数字界面缺少这种预期，所以我用两层结构模拟它——明亮的按钮面（cap）和深色的实体底座（base）。</p>
+          <blockquote>深度不是阴影的堆叠，而是结构的诚实表达。</blockquote>
+
+          <h2 id="s2">六色角色与底座</h2>
+          <p>每种交互色都定义一对 token：按钮面负责亲和力，底座负责重量。日间与夜间主题各自维护一整套变量，切换时无需改动任何组件代码。</p>
+          <div class="code-block">
+            <header><span>tokens.css</span><button class="copy-btn" type="button"><span data-copy="复制代码">复制代码</span></button></header>
+            <pre><code>:root {
+  --coral: #ff656c;      /* 按钮 cap */
+  --coral-base: #72002f; /* 实体底座 */
+}
+[data-theme="night"] {
+  --coral: #ff7379;
+  --coral-base: #5a082e;
+}</code></pre>
+          </div>
+
+          <h2 id="s3">一次按压的解剖</h2>
+          <p>按压反馈只需要三个状态，全部通过 <code>transform</code> 完成，不触碰布局属性：</p>
+          <ul>
+            <li><b>静止</b>：面上浮 8px，露出底座；</li>
+            <li><b>hover</b>：上浮至 11px，轻微提亮；</li>
+            <li><b>active</b>：落回 2px，几乎贴合底座。</li>
+          </ul>
+          <p>动效时长控制在 80–150ms，快到不拖泥带水，慢到可以被感知。</p>
+
+          <h3>数据示例</h3>
+          <div class="table-wrap">
+            <table>
+              <caption class="visually-hidden" style="position:absolute;left:-9999px">各组件动效时长</caption>
+              <thead><tr><th>组件</th><th>静止位移</th><th>hover</th><th>active</th><th>时长</th></tr></thead>
+              <tbody>
+                <tr><td>大按钮</td><td>8px</td><td>11px</td><td>2px</td><td>110ms</td></tr>
+                <tr><td>小按钮</td><td>7px</td><td>9px</td><td>1px</td><td>110ms</td></tr>
+                <tr><td>内容卡</td><td>8px</td><td>11px</td><td>1px</td><td>120ms</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h2 id="s4">克制的代价与回报</h2>
+          <p>阅读区被刻意排除在按压体系之外：正文、引用和表格保持平面。操作区域才强调反馈——这让每次「按下」都有了明确含义。更多背景可参考<a class="inline" href="02-post-discovery.html">其他设计系统文章</a>。</p>
+          <p>玩具盒的最终目标不是好玩本身，而是让长期记录这件事<em>值得期待</em>。</p>
+        </div>
+
+        <nav class="toc" aria-label="本文目录">
+          <h2>目录</h2>
+          <ol>
+            <li><a href="#s1">为什么从按钮开始</a></li>
+            <li><a href="#s2">六色角色与底座</a></li>
+            <li><a href="#s3">一次按压的解剖</a></li>
+            <li><a href="#s4">克制的代价与回报</a></li>
+          </ol>
+        </nav>
+      </div>
+
+      <div class="end-info">
+        <div class="tags"><span class="tag">设计系统</span><span class="tag">随笔</span><span class="tag">玩具盒</span></div>
+        <span class="muted" style="color:var(--muted);font-size:12px;font-weight:700">最后更新于 2026.07.18</span>
+      </div>
+    </article>
+
+    <section class="related" aria-labelledby="rel-title">
+      <h2 id="rel-title">相关文章</h2>
+      <div class="related-grid">
+        <a class="rel" href="03-post-detail.html"><b>不用复杂动效，也能让界面显得有生命</b><small>2026.07.09 · 6 min · 共同标签 2 个</small></a>
+        <a class="rel" href="03-post-detail.html"><b>夜间主题不是把颜色调暗那么简单</b><small>2026.05.30 · 7 min · 共同标签 1 个</small></a>
+      </div>
+    </section>
+
+    <section class="interaction" aria-labelledby="inter-title">
+      <h2 id="inter-title" style="font-family:Georgia,'Noto Serif SC',serif;font-size:22px;margin:0 0 16px">互动</h2>
+      <div class="inter-row">
+        <span class="views">◔ 浏览 <b id="views-count">1,284</b></span>
+        <button class="button small like-btn" id="like-btn" type="button" aria-pressed="false"><span><i class="heart">♥</i> 点赞 <b id="like-count">128</b></span></button>
+        <button class="button small sky" type="button"><span>● 评论 3</span></button>
+      </div>
+    </section>
+
+    <section class="comments" aria-labelledby="comments-title">
+      <h2 id="comments-title">评论 <span style="color:var(--muted);font-size:14px">(3)</span></h2>
+      <div class="comment-list">
+        <article class="comment">
+          <span class="avatar" aria-hidden="true">YJ</span>
+          <div><b>Yuki J.</b><time>2026.07.17</time><p>这个实体按压感很好，内容区也不会显得过度装饰。想问下夜间主题的底座颜色是怎么定的？</p></div>
+        </article>
+        <article class="comment">
+          <span class="avatar" aria-hidden="true">MT</span>
+          <div><b>Moto</b><time>2026.07.16</time><p>看完立刻给自己的博客加了个 8px 底座，反馈确实清楚多了。</p></div>
+        </article>
+        <article class="comment">
+          <span class="avatar" aria-hidden="true">RD</span>
+          <div><b>Rui</b><time>2026.07.15</time><p>「深度不是阴影的堆叠」这句可以直接印在 T 恤上。</p></div>
+        </article>
+      </div>
+      <form class="form" onsubmit="return false">
+        <label for="comment">留下你的想法</label>
+        <div class="name-row">
+          <input id="name" type="text" placeholder="昵称（必填）" autocomplete="nickname">
+          <input id="email" type="email" placeholder="邮箱（选填，用于头像）" autocomplete="email">
+        </div>
+        <textarea id="comment" placeholder="写一段友善的评论…"></textarea>
+        <div class="form-actions">
+          <span>评论将在审核后显示 · 不公开邮箱</span>
+          <button class="button small pink" type="button" id="submit-comment"><span>发送评论</span></button>
+        </div>
+        <p class="form-msg" id="form-msg" role="status">✓ 评论已提交，将在审核后显示。感谢分享！</p>
+      </form>
+    </section>
+
+    <footer>
+      <span>© 2026 Playbook · 用心按下每一次更新</span>
+      <span><a href="02-post-discovery.html">← 返回文章列表</a> · <a href="index.html">Demo 索引</a></span>
+    </footer>
+  </main>
+  <script>
+    const root=document.documentElement;
+    const toggle=document.getElementById('theme-toggle');
+    const saved=localStorage.getItem('playbook-theme');
+    const initial=saved||(matchMedia('(prefers-color-scheme: dark)').matches?'night':'light');
+    function setTheme(theme){root.dataset.theme=theme;if(toggle){toggle.setAttribute('aria-pressed',String(theme==='night'));toggle.setAttribute('aria-label',theme==='night'?'切换日间主题':'切换晚间主题')}localStorage.setItem('playbook-theme',theme)}
+    setTheme(initial);
+    if(toggle)toggle.addEventListener('click',()=>setTheme(root.dataset.theme==='night'?'light':'night'));
+    // 点赞：乐观更新 + aria-pressed
+    const likeBtn=document.getElementById('like-btn');
+    const likeCount=document.getElementById('like-count');
+    let liked=false,count=128;
+    likeBtn.addEventListener('click',()=>{
+      liked=!liked;count+=liked?1:-1;
+      likeCount.textContent=count;
+      likeBtn.setAttribute('aria-pressed',String(liked));
+    });
+    // 评论提交：锁定按钮 → 成功提示
+    const submitBtn=document.getElementById('submit-comment');
+    const formMsg=document.getElementById('form-msg');
+    submitBtn.addEventListener('click',()=>{
+      submitBtn.disabled=true;
+      submitBtn.querySelector('span').textContent='发送中…';
+      setTimeout(()=>{
+        submitBtn.disabled=false;
+        submitBtn.querySelector('span').textContent='发送评论';
+        formMsg.classList.add('show');
+        document.getElementById('comment').value='';
+        setTimeout(()=>formMsg.classList.remove('show'),4000);
+      },800);
+    });
+    // 复制代码按钮
+    document.querySelectorAll('.copy-btn').forEach(btn=>btn.addEventListener('click',()=>{
+      const label=btn.querySelector('span');
+      label.textContent='已复制 ✓';
+      setTimeout(()=>label.textContent='复制代码',1600);
+    }));
+    // 目录当前高亮
+    const links=[...document.querySelectorAll('.toc a')];
+    const obs=new IntersectionObserver(entries=>{
+      entries.forEach(e=>{
+        if(e.isIntersecting){
+          links.forEach(l=>l.classList.toggle('active',l.getAttribute('href')==='#'+e.target.id));
+        }
+      });
+    },{rootMargin:'-30% 0px -60% 0px'});
+    document.querySelectorAll('.article h2[id]').forEach(h=>obs.observe(h));
+  </script>
+</body>
+</html>

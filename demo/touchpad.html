@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Interactive touchpad button demo">
+  <title>Touchpad Demo</title>
+  <style>
+    :root {
+      --canvas: #fff;
+      --grid-minor: #f1f1f1;
+      --grid-major: #dfdfdf;
+      --coral: #ff6268;
+      --wine: #76002f;
+      --pink: #ffc4c4;
+      --warm: #ffe2c3;
+      --violet: #a100a5;
+      --lilac: #ef80ee;
+      --rose: #f48bc5;
+      --ink: #050505;
+      --press-time: 110ms;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { min-width: 320px; background: var(--canvas); }
+
+    body {
+      min-width: 320px;
+      min-height: 100vh;
+      margin: 0;
+      color: var(--ink);
+      background-color: var(--canvas);
+      background-image:
+        linear-gradient(var(--grid-major) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+        linear-gradient(var(--grid-minor) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px);
+      background-size: 120px 120px, 120px 120px, 30px 30px, 30px 30px;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    button { font: inherit; }
+
+    .demo {
+      width: min(1180px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 72px 0 74px;
+    }
+
+    .key-strip {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      width: min(1110px, 100%);
+      height: 150px;
+      margin-left: 30px;
+      padding: 0 30px;
+      border-radius: 17px;
+      background: linear-gradient(to bottom, transparent 30px, var(--warm) 30px);
+    }
+
+    .pad-button {
+      --cap: var(--coral);
+      --base: var(--wine);
+      position: relative;
+      z-index: 1;
+      display: block;
+      width: 100%;
+      height: var(--height, 240px);
+      padding: 0;
+      border: 0;
+      border-radius: var(--radius, 26px);
+      background: transparent;
+      color: var(--ink);
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .pad-button__base,
+    .pad-button__cap {
+      position: absolute;
+      inset-inline: 0;
+      border-radius: inherit;
+      pointer-events: none;
+    }
+
+    .pad-button__base {
+      top: var(--depth, 60px);
+      bottom: 0;
+      background: var(--base);
+    }
+
+    .pad-button__cap {
+      top: 0;
+      bottom: var(--depth, 60px);
+      display: grid;
+      place-items: center;
+      background: var(--cap);
+      font-size: var(--label-size, 37px);
+      line-height: 1;
+      transition: transform var(--press-time) cubic-bezier(.2, 0, 0, 1), filter 160ms ease;
+    }
+
+    .pad-button:hover .pad-button__cap { filter: brightness(1.035) saturate(1.04); }
+    .pad-button:active .pad-button__cap,
+    .pad-button.is-pressed .pad-button__cap { transform: translateY(calc(var(--depth, 60px) * .72)); }
+    .pad-button:focus-visible { outline: 4px solid var(--ink); outline-offset: 6px; }
+
+    .key {
+      --height: 120px;
+      --depth: 30px;
+      --radius: 14px;
+      --label-size: 37px;
+    }
+
+    .key:nth-child(2) { --cap: var(--lilac); --base: var(--violet); }
+    .key:nth-child(4) { --cap: var(--rose); --base: var(--violet); }
+
+    .push-row {
+      display: grid;
+      grid-template-columns: 420px 420px 255px;
+      justify-content: space-between;
+      margin-top: 120px;
+    }
+
+    .button-carrier {
+      position: relative;
+      isolation: isolate;
+      height: 270px;
+      padding: 0 30px 30px;
+    }
+
+    .button-carrier:nth-child(2) { transform: translateX(17px); }
+    .button-carrier:nth-child(3) { transform: translateX(20px); }
+
+    .button-carrier::before,
+    .score-panel::before {
+      content: "";
+      position: absolute;
+      z-index: 0;
+      inset: 60px 0 0;
+      border-radius: 30px;
+      background: var(--pink);
+    }
+
+    .action {
+      --height: 240px;
+      --depth: 60px;
+      --radius: 26px;
+      --label-size: 37px;
+    }
+
+    .button-carrier:nth-child(2) .action {
+      --height: 198px;
+      --depth: 18px;
+      transform: translateY(42px);
+    }
+
+    .score-panel {
+      position: relative;
+      isolation: isolate;
+      display: grid;
+      grid-template-columns: 360px 450px;
+      gap: 30px;
+      width: 900px;
+      height: 270px;
+      margin-top: 60px;
+      padding: 0 30px 30px;
+    }
+
+    .score {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      height: 150px;
+      margin-top: 90px;
+      place-items: center;
+      border-radius: 26px;
+      background: var(--warm);
+      font-size: 76px;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .status {
+      position: fixed;
+      right: 20px;
+      bottom: 18px;
+      margin: 0;
+      padding: 7px 10px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, .88);
+      color: #68605d;
+      font-size: 12px;
+      opacity: 0;
+      transform: translateY(4px);
+      transition: opacity 150ms ease, transform 150ms ease;
+      pointer-events: none;
+    }
+
+    .status.is-visible { opacity: 1; transform: translateY(0); }
+
+    @media (max-width: 1240px) {
+      .demo { width: min(900px, calc(100% - 40px)); }
+      .push-row { grid-template-columns: 1fr 1fr .62fr; gap: 38px; }
+      .score-panel { width: calc((100% - 76px) / 3 * 2 + 38px); grid-template-columns: 1fr 1.28fr; }
+    }
+
+    @media (max-width: 760px) {
+      .demo { width: min(560px, calc(100% - 28px)); padding: 30px 0 48px; }
+      .key-strip { width: 100%; height: 78px; margin-left: 0; padding-inline: 14px; border-radius: 12px; background-position-y: -6px; }
+      .key { --height: 78px; --depth: 20px; --radius: 10px; --label-size: 24px; }
+      .push-row { grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 72px; }
+      .push-row .button-carrier:last-child { grid-column: 1 / -1; width: 56%; justify-self: end; }
+      .button-carrier { height: 198px; padding: 0 18px 22px; }
+      .button-carrier:nth-child(2), .button-carrier:nth-child(3) { transform: none; }
+      .button-carrier::before, .score-panel::before { inset-top: 44px; inset-block-start: 44px; border-radius: 22px; }
+      .action { --height: 176px; --depth: 44px; --radius: 19px; --label-size: 28px; }
+      .button-carrier:nth-child(2) .action { --height: 176px; --depth: 44px; transform: none; }
+      .score-panel { grid-template-columns: 1fr 1.25fr; gap: 18px; width: 100%; height: 198px; margin-top: 34px; padding: 0 18px 22px; }
+      .score { height: 132px; margin-top: 22px; border-radius: 19px; font-size: 52px; }
+    }
+
+    @media (max-width: 430px) {
+      .demo { width: calc(100% - 20px); padding-top: 22px; }
+      .key-strip { height: 62px; padding-inline: 9px; }
+      .key { --height: 62px; --depth: 16px; --radius: 8px; --label-size: 19px; }
+      .push-row { gap: 14px; margin-top: 54px; }
+      .button-carrier { height: 160px; padding: 0 12px 18px; }
+      .button-carrier::before, .score-panel::before { inset-block-start: 36px; border-radius: 18px; }
+      .action { --height: 142px; --depth: 36px; --radius: 16px; --label-size: 22px; }
+      .button-carrier:nth-child(2) .action { --height: 142px; --depth: 36px; }
+      .score-panel { gap: 12px; height: 160px; padding: 0 12px 18px; }
+      .score { height: 106px; margin-top: 18px; border-radius: 16px; font-size: clamp(28px, 11vw, 42px); }
+      .status { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .pad-button__cap, .status { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="demo">
+    <section class="key-strip" aria-label="快捷键组">
+      <button class="pad-button key" type="button" data-action="key" aria-label="快捷键 A 1"><span class="pad-button__base"></span><span class="pad-button__cap">A</span></button>
+      <button class="pad-button key" type="button" data-action="key" aria-label="快捷键 A 2"><span class="pad-button__base"></span><span class="pad-button__cap">A</span></button>
+      <button class="pad-button key" type="button" data-action="key" aria-label="快捷键 A 3"><span class="pad-button__base"></span><span class="pad-button__cap">A</span></button>
+      <button class="pad-button key" type="button" data-action="key" aria-label="快捷键 A 4"><span class="pad-button__base"></span><span class="pad-button__cap">A</span></button>
+      <button class="pad-button key" type="button" data-action="key" aria-label="快捷键 A 5"><span class="pad-button__base"></span><span class="pad-button__cap">A</span></button>
+    </section>
+
+    <section class="push-row" aria-label="操作按钮">
+      <div class="button-carrier"><button class="pad-button action" type="button" data-action="push"><span class="pad-button__base"></span><span class="pad-button__cap">PUSH</span></button></div>
+      <div class="button-carrier"><button class="pad-button action" type="button" data-action="push"><span class="pad-button__base"></span><span class="pad-button__cap">PUSH</span></button></div>
+      <div class="button-carrier"><button class="pad-button action" type="button" data-action="push"><span class="pad-button__base"></span><span class="pad-button__cap">PUSH</span></button></div>
+    </section>
+
+    <section class="score-panel" aria-label="计分控制">
+      <button class="pad-button action" type="button" data-action="good"><span class="pad-button__base"></span><span class="pad-button__cap">GOOD</span></button>
+      <output id="score" class="score" aria-live="polite">12356</output>
+    </section>
+  </main>
+
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+
+  <script>
+    const score = document.querySelector('#score');
+    const status = document.querySelector('#status');
+    const increments = { key: 1, push: 10, good: 100 };
+    let value = Number(score.value || score.textContent);
+    let statusTimer;
+
+    document.querySelectorAll('[data-action]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const action = button.dataset.action;
+        value += increments[action];
+        score.value = value;
+        score.textContent = value;
+        status.textContent = `${button.textContent.trim()} · ${value}`;
+        status.classList.add('is-visible');
+        button.classList.add('is-pressed');
+        clearTimeout(statusTimer);
+        statusTimer = setTimeout(() => {
+          button.classList.remove('is-pressed');
+          status.classList.remove('is-visible');
+        }, 500);
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Playbook 个人内容站 - 后台时间轴管理设计 Demo（noindex）">
+  <meta name="robots" content="noindex,nofollow">
+  <title>时间轴管理 - Playbook 后台</title>
+  <style>
+    :root{--canvas:#fffdf8;--ink:#211522;--muted:#765f73;--line:rgba(72,42,62,.12);--surface:#fff;--soft:#fff0e6;--coral:#ff656c;--coral-base:#72002f;--pink:#f58bc5;--pink-base:#9b078b;--cream:#ffe5c5;--cream-base:#b78122;--mint:#82e2bf;--mint-base:#146044;--sky:#8dd1ff;--sky-base:#1c6199;--lilac:#e989ee;--lilac-base:#90009d;--shell:#ffc9cb;--grid:rgba(72,42,62,.08);--shadow:0 9px 0 rgba(114,0,47,.13)}
+    [data-theme=night]{--canvas:#21162c;--ink:#fff9f1;--muted:#cdbbd0;--line:rgba(255,230,204,.14);--surface:#31223d;--soft:#3e2b4a;--coral:#ff7379;--coral-base:#5a082e;--pink:#e995d8;--pink-base:#70106e;--cream:#ffdfaa;--cream-base:#76511d;--mint:#7fe0bd;--mint-base:#104934;--sky:#82c7f2;--sky-base:#153e6e;--lilac:#d49aff;--lilac-base:#4b246e;--shell:#4a304f;--grid:rgba(255,230,204,.08);--shadow:0 9px 0 rgba(15,6,21,.3)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background-color:var(--canvas);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:32px 32px;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Noto Sans SC",sans-serif;transition:background-color .25s,color .25s}button,input,textarea,select{font:inherit}button{color:inherit}a{color:inherit;text-decoration:none}
+    :focus-visible{outline:4px solid var(--sky);outline-offset:4px}
+    .shell{display:grid;grid-template-columns:216px 1fr;min-height:100vh}
+    .side{display:flex;flex-direction:column;gap:6px;padding:22px 16px;border-right:1px solid var(--line);background:color-mix(in srgb,var(--surface) 72%,transparent)}
+    .brand{display:inline-flex;align-items:center;gap:10px;margin:0 6px 22px;font-family:Georgia,"Noto Serif SC",serif;font-size:19px;font-weight:700}.mark{width:30px;height:30px;display:grid;place-items:center;border-radius:10px;background:var(--coral);box-shadow:0 5px 0 var(--coral-base);transform:rotate(-7deg)}.mark i{display:block;width:12px;height:12px;border:3px solid var(--ink);border-radius:50%}
+    .nav-item{position:relative;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;padding:0 0 6px;border:0;border-radius:13px;cursor:pointer;background:var(--line);text-align:left}
+    .nav-item>span{display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;border-radius:inherit;background:var(--soft);transform:translateY(-6px);transition:transform .1s,filter .12s;font-size:13.5px;font-weight:750;color:var(--muted)}
+    .nav-item:hover>span{transform:translateY(-8px);filter:brightness(1.02)}
+    .nav-item:active>span{transform:translateY(-1px)}
+    .nav-item[aria-current=page]>span{background:var(--coral);color:#fff}
+    .badge{padding:2px 8px;border-radius:99px;background:var(--pink);color:#341624;font-size:10.5px;font-weight:900}
+    .nav-item[aria-current=page] .badge{background:var(--cream);color:#42220e}
+    .side-foot{margin-top:auto;padding:12px 8px 0;border-top:1px solid var(--line);color:var(--muted);font-size:11px;font-weight:700;line-height:1.8}.side-foot a{color:var(--muted)}.side-foot a:hover{color:var(--ink)}
+    .main{padding:0 30px 56px;min-width:0}
+    .topbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 0 14px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--canvas) 88%,transparent);backdrop-filter:blur(4px)}
+    .topbar h1{margin:0;font-family:Georgia,"Noto Serif SC",serif;font-size:24px}.topbar .sub{color:var(--muted);font-size:12px;font-weight:700;margin-top:3px}
+    .top-actions{display:flex;align-items:center;gap:14px}
+    .menu-btn{display:none;position:relative;width:46px;height:46px;padding:0 0 5px;border:0;border-radius:12px;cursor:pointer;background:var(--coral-base)}.menu-btn span{display:grid;place-items:center;width:100%;height:100%;border-radius:inherit;background:var(--coral);transform:translateY(-5px);font-size:17px;font-weight:900;color:#fff;transition:transform .1s}.menu-btn:active span{transform:translateY(-1px)}
+    .toggle{position:relative;width:74px;height:39px;padding:0;border:0;border-radius:99px;cursor:pointer;background:transparent}.toggle:before{content:"";position:absolute;inset:6px 0 0;border-radius:inherit;background:var(--pink-base)}.toggle-top{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:4px 8px;border-radius:inherit;color:#28152b;background:var(--pink);transition:transform .12s}.knob{width:27px;height:27px;border-radius:50%;background:var(--cream);box-shadow:inset -3px -3px 0 rgba(100,61,0,.12);transition:transform .2s}[data-theme=night] .knob{transform:translateX(27px)}.toggle:active .toggle-top{transform:translateY(5px)}
+    .view-btn{position:relative;min-height:42px;padding:0 0 7px;border:0;border-radius:13px;cursor:pointer;background:var(--sky-base)}.view-btn span{display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:0 15px;border-radius:inherit;background:var(--sky);transform:translateY(-7px);font-size:12.5px;font-weight:850;color:#15344e;transition:transform .1s}.view-btn:hover span{transform:translateY(-9px)}.view-btn:active span{transform:translateY(-1px)}
+    .avatar-btn{display:grid;place-items:center;width:42px;height:42px;border:0;border-radius:50%;cursor:pointer;background:var(--mint);box-shadow:0 5px 0 var(--mint-base);font-size:13px;font-weight:900;color:#0d3826;transform:translateY(-5px);transition:transform .1s}.avatar-btn:hover{transform:translateY(-7px)}.avatar-btn:active{transform:translateY(0)}
+    .button{--cap:var(--coral);--base:var(--coral-base);position:relative;display:inline-grid;min-height:52px;place-items:center;padding:0 0 8px;border:0;border-radius:16px;cursor:pointer;background:var(--base);font-weight:850}.button>span{display:inline-flex;align-items:center;justify-content:center;gap:9px;width:100%;min-height:52px;padding:0 21px;border-radius:inherit;background:var(--cap);transform:translateY(-8px);transition:transform .11s,filter .15s}.button:hover>span{transform:translateY(-11px);filter:brightness(1.035) saturate(1.05)}.button:active>span{transform:translateY(-2px)}.button.pink{--cap:var(--pink);--base:var(--pink-base)}.button.cream{--cap:var(--cream);--base:var(--cream-base);color:#42220e}.button.mint{--cap:var(--mint);--base:var(--mint-base);color:#10392b}.button.sky{--cap:var(--sky);--base:var(--sky-base);color:#15344e}.button.small{min-height:42px;padding:0 0 7px;border-radius:13px;font-size:13px}.button.small>span{min-height:42px;padding:0 14px;transform:translateY(-7px)}.button.small:hover>span{transform:translateY(-9px)}.button.small:active>span{transform:translateY(-1px)}.button:disabled{cursor:not-allowed;opacity:.48}.button:disabled>span{transform:translateY(-4px)}
+    /* 工具栏 */
+    .toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:13px;margin-top:24px;padding:16px 18px;border:1px solid var(--line);border-radius:18px;background:var(--surface)}
+    .search{display:flex;align-items:center;gap:10px;flex:1;min-width:200px;padding:0 6px 0 13px;border:2px solid var(--line);border-radius:13px;background:var(--soft)}.search input{flex:1;min-width:0;padding:10px 0;border:0;color:var(--ink);background:transparent;font-size:13px}.search input:focus{outline:none}.search:focus-within{border-color:var(--sky)}
+    select{padding:10px 13px;border:2px solid var(--line);border-radius:13px;color:var(--ink);background:var(--soft);font-size:12.5px;font-weight:700;cursor:pointer}
+    /* 列表 */
+    .item-list{display:grid;gap:12px;margin-top:20px}
+    .item{--cap:var(--pink);--base:var(--pink-base);display:grid;grid-template-columns:12px 108px 1fr auto;gap:16px;align-items:center;padding:0 16px 8px 0;border:0;border-radius:17px;cursor:pointer;background:var(--base);text-align:left}
+    .item.t-note{--cap:var(--cream);--base:var(--cream-base)}
+    .item.t-milestone{--cap:var(--coral);--base:var(--coral-base)}
+    .item.t-project{--cap:var(--mint);--base:var(--mint-base)}
+    .item.t-travel{--cap:var(--sky);--base:var(--sky-base)}
+    .item.t-reading{--cap:var(--lilac);--base:var(--lilac-base)}
+    .item .face{display:grid;grid-template-columns:108px 1fr auto;gap:16px;align-items:center;width:100%;padding:13px 0 13px 16px;border-radius:inherit;background:var(--cap);transform:translateY(-8px);transition:transform .11s,filter .15s}
+    .item:hover .face{transform:translateY(-11px);filter:brightness(1.03)}.item:active .face{transform:translateY(-1px)}
+    .item .when{color:rgba(33,21,34,.65);font-size:11.5px;font-weight:800}
+    .item .info b{display:block;font-size:14.5px;line-height:1.3}.item .info small{display:block;color:rgba(33,21,34,.6);font-size:12px;font-weight:650;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:520px}
+    .item .meta-r{display:flex;flex-direction:column;gap:5px;align-items:flex-end}
+    .pill{display:inline-block;padding:3px 10px;border-radius:99px;font-size:10.5px;font-weight:850;white-space:nowrap}
+    .pill.published{background:rgba(13,56,38,.16);color:#0d3826}
+    .pill.draft{background:rgba(74,45,17,.18);color:#4a2d11}
+    .pill.archived{background:rgba(33,21,34,.12);color:rgba(33,21,34,.6)}
+    .pill.type{background:rgba(33,21,34,.1);color:rgba(33,21,34,.75)}
+    .item .cnt{color:rgba(33,21,34,.6);font-size:11px;font-weight:800}
+    /* 抽屉编辑 */
+    .drawer-backdrop{position:fixed;inset:0;z-index:30;display:none;background:rgba(33,21,34,.4)}
+    .drawer-backdrop.show{display:block}
+    .drawer{position:fixed;top:0;right:0;bottom:0;z-index:31;width:min(430px,94vw);padding:24px 22px;overflow-y:auto;background:var(--canvas);border-left:1px solid var(--line);transform:translateX(105%);transition:transform .2s}
+    .drawer.open{transform:none}
+    .drawer h2{margin:0 0 4px;font-family:Georgia,"Noto Serif SC",serif;font-size:21px}
+    .drawer .sub{color:var(--muted);font-size:12px;font-weight:700;margin:0 0 18px}
+    .field{margin-bottom:14px}.field label{display:block;margin-bottom:6px;font-size:12px;font-weight:750}.field .hint{color:var(--muted);font-size:11px;font-weight:700;margin-top:5px}
+    .field input,.field textarea,.field select{width:100%;padding:11px 12px;border:2px solid var(--line);border-radius:12px;color:var(--ink);background:var(--soft)}.field input:focus,.field textarea:focus,.field select:focus{outline:none;border-color:var(--sky)}
+    .field textarea{min-height:96px;resize:vertical}
+    .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .type-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+    .type-opt{position:relative;padding:0 0 5px;border:0;border-radius:11px;cursor:pointer;background:var(--line)}
+    .type-opt span{display:block;padding:9px 4px;border-radius:inherit;background:var(--soft);transform:translateY(-5px);font-size:12px;font-weight:800;color:var(--muted);text-align:center;transition:transform .1s}
+    .type-opt:hover span{transform:translateY(-6px)}
+    .type-opt[aria-pressed=true] span{background:var(--pink);color:#341624}
+    .drawer-actions{position:sticky;bottom:0;display:flex;gap:12px;padding:14px 0;background:linear-gradient(transparent,var(--canvas) 30%)}
+    .drawer-actions .button{flex:1}
+    .preview{margin-top:6px;padding:13px;border:1px dashed var(--line);border-radius:13px;background:var(--soft)}
+    .preview small{display:block;color:var(--muted);font-size:10.5px;font-weight:800;margin-bottom:6px}
+    .preview b{font-size:13.5px}
+    @media(max-width:960px){.shell{grid-template-columns:1fr}.side{position:fixed;inset:0 auto 0 0;z-index:20;width:250px;transform:translateX(-105%);transition:transform .2s;background:var(--canvas)}.side.open{transform:none}.menu-btn{display:inline-block}.item{grid-template-columns:108px 1fr}.item .when{display:none}.item .face{grid-template-columns:108px 1fr}}
+    @media(max-width:600px){.main{padding:0 18px 40px}.topbar{flex-wrap:wrap}.topbar h1{font-size:20px}.item{grid-template-columns:1fr}.item .face{grid-template-columns:1fr}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="side" id="side-nav">
+      <a class="brand" href="09-admin-dashboard.html"><span class="mark"><i></i></span>Playbook 后台</a>
+      <nav aria-label="后台导航">
+        <a class="nav-item" href="09-admin-dashboard.html"><span><b>▦</b> 概览</span></a>
+        <a class="nav-item" href="10-admin-posts.html"><span><b>▤</b> 文章</span></a>
+        <a class="nav-item" href="11-admin-timeline.html" aria-current="page"><span><b>◌</b> 时间轴</span></a>
+        <a class="nav-item" href="12-admin-comments.html"><span><b>●</b> 评论</span><span class="badge">5</span></a>
+        <a class="nav-item" href="13-admin-analytics.html"><span><b>◒</b> 分析</span></a>
+        <a class="nav-item" href="14-admin-settings.html"><span><b>⚙</b> 设置</span></a>
+      </nav>
+      <div class="side-foot">
+        <a href="01-home.html">↗ 查看站点</a><br>
+        <a href="index.html">Demo 索引</a><br>
+        admin@playbook.example
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div style="display:flex;align-items:center;gap:12px">
+          <button class="menu-btn" id="menu-btn" type="button" aria-label="打开导航" aria-expanded="false" aria-controls="side-nav"><span>≡</span></button>
+          <div><h1>时间轴管理</h1><p class="sub">126 个节点 · 按 occurred_at 倒序</p></div>
+        </div>
+        <div class="top-actions">
+          <button class="toggle" id="theme-toggle" type="button" aria-label="切换晚间主题" aria-pressed="false"><span class="toggle-top">☼<span class="knob"></span>☾</span></button>
+          <a class="view-btn" href="04-timeline-list.html"><span>↗ 查看公开页</span></a>
+          <button class="avatar-btn" type="button" aria-label="账户菜单">LN</button>
+        </div>
+      </header>
+
+      <div class="toolbar">
+        <div class="search">
+          <label for="tl-q" style="color:var(--muted)">⌕</label>
+          <input id="tl-q" type="search" placeholder="搜索标题或内容…" autocomplete="off">
+        </div>
+        <select id="type-f" aria-label="类型筛选"><option value="">全部类型</option><option>笔记</option><option>里程碑</option><option>项目</option><option>出行</option><option>阅读</option><option>发布</option></select>
+        <select id="year-f" aria-label="年份筛选"><option value="">全部年份</option><option>2026</option><option>2025</option><option>2024</option></select>
+        <select id="status-f" aria-label="状态筛选"><option value="">全部状态</option><option>已发布</option><option>草稿</option><option>已归档</option></select>
+        <button class="button small" type="button" id="new-btn"><span>＋ 新建节点</span></button>
+      </div>
+
+      <div class="item-list" id="item-list">
+        <button class="item t-release" type="button" data-title="主题样式库建立" data-content="完成按钮、卡片、统计与互动模块的基调，六个色对全部就位。" data-date="2026-07-17" data-type="发布">
+          <span class="face">
+            <span class="when">2026.07.17</span>
+            <span class="info"><b>主题样式库建立</b><small>完成按钮、卡片、统计与互动模块的基调，六个色对全部就位。</small></span>
+            <span class="meta-r"><span class="pill published">已发布</span><span class="cnt">♥ 24 · ● 5 · 07.18 更新</span></span>
+          </span>
+        </button>
+        <button class="item t-project" type="button" data-title="文章阅读体验调整" data-content="更轻的边界与更大的行距，让长文拥有稳定的呼吸感。" data-date="2026-07-14" data-type="项目">
+          <span class="face">
+            <span class="when">2026.07.14</span>
+            <span class="info"><b>文章阅读体验调整</b><small>更轻的边界与更大的行距，让长文拥有稳定的呼吸感。</small></span>
+            <span class="meta-r"><span class="pill published">已发布</span><span class="cnt">♥ 11 · ● 2 · 07.14 更新</span></span>
+          </span>
+        </button>
+        <button class="item t-travel" type="button" data-title="舟山群岛两日" data-content="海边的大风、渔港的清晨，和一整晚没修完的 bug。" data-date="2026-07-05" data-type="出行">
+          <span class="face">
+            <span class="when">2026.07.05</span>
+            <span class="info"><b>舟山群岛两日</b><small>海边的大风、渔港的清晨，和一整晚没修完的 bug。</small></span>
+            <span class="meta-r"><span class="pill published">已发布</span><span class="cnt">♥ 32 · ● 7 · 07.06 更新</span></span>
+          </span>
+        </button>
+        <button class="item t-note" type="button" data-title="给页面加一点实体感" data-content="取消泛滥阴影，只保留明确可感知的底座。" data-date="2026-07-01" data-type="笔记">
+          <span class="face">
+            <span class="when">2026.07.01</span>
+            <span class="info"><b>给页面加一点实体感</b><small>取消泛滥阴影，只保留明确可感知的底座。</small></span>
+            <span class="meta-r"><span class="pill published">已发布</span><span class="cnt">♥ 9 · ● 1 · 07.01 更新</span></span>
+          </span>
+        </button>
+        <button class="item t-reading" type="button" data-title="读《设计中的设计》" data-content="重新理解「日常」与设计之间的关系。" data-date="2026-06-28" data-type="阅读">
+          <span class="face">
+            <span class="when">2026.06.28</span>
+            <span class="info"><b>读《设计中的设计》</b><small>重新理解「日常」与设计之间的关系。</small></span>
+            <span class="meta-r"><span class="pill draft">草稿</span><span class="cnt">未发布 · 06.28 编辑</span></span>
+          </span>
+        </button>
+        <button class="item t-milestone" type="button" data-title="累计有效浏览突破 10,000" data-content="小站也慢慢有了自己的读者。" data-date="2026-06-15" data-type="里程碑">
+          <span class="face">
+            <span class="when">2026.06.15</span>
+            <span class="info"><b>累计有效浏览突破 10,000</b><small>小站也慢慢有了自己的读者。</small></span>
+            <span class="meta-r"><span class="pill archived">已归档</span><span class="cnt">♥ 21 · ● 4 · 06.16 更新</span></span>
+          </span>
+        </button>
+      </div>
+
+      <div style="display:flex;justify-content:center;margin-top:24px">
+        <button class="button small cream" type="button"><span>加载更多 ↓</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 编辑抽屉 -->
+  <div class="drawer-backdrop" id="backdrop"></div>
+  <div class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+    <h2 id="drawer-title">编辑节点</h2>
+    <p class="sub" id="drawer-sub">修改后按「保存草稿」或「发布」 · 并发冲突时将阻止覆盖</p>
+    <form onsubmit="return false">
+      <div class="field">
+        <label for="d-date">发生时间 *（UTC 存储 · 站点时区显示）</label>
+        <input id="d-date" type="datetime-local" value="2026-07-17T10:30">
+        <p class="hint">修改发生时间会移动节点在分组中的位置。</p>
+      </div>
+      <div class="field">
+        <label id="d-type-label">类型 *</label>
+        <div class="type-grid" role="group" aria-labelledby="d-type-label">
+          <button class="type-opt" type="button" aria-pressed="false"><span>✎ 笔记</span></button>
+          <button class="type-opt" type="button" aria-pressed="false"><span>★ 里程碑</span></button>
+          <button class="type-opt" type="button" aria-pressed="false"><span>◐ 项目</span></button>
+          <button class="type-opt" type="button" aria-pressed="false"><span>⛰ 出行</span></button>
+          <button class="type-opt" type="button" aria-pressed="true"><span>◍ 阅读</span></button>
+          <button class="type-opt" type="button" aria-pressed="false"><span>✦ 发布</span></button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="d-title">标题（可选）</label>
+        <input id="d-title" type="text" placeholder="给节点一个名字…">
+      </div>
+      <div class="field">
+        <label for="d-content">内容 *</label>
+        <textarea id="d-content" placeholder="记录这一刻…（纯文本，支持换行）"></textarea>
+      </div>
+      <div class="two">
+        <div class="field">
+          <label for="d-media">媒体（单图）</label>
+          <input id="d-media" type="file" accept="image/*">
+        </div>
+        <div class="field">
+          <label for="d-url">外部链接</label>
+          <input id="d-url" type="url" placeholder="https://…">
+        </div>
+      </div>
+      <div class="field">
+        <label>实时预览</label>
+        <div class="preview"><small>时间轴卡片预览</small><b id="preview-title">（未命名节点）</b><p id="preview-content" style="margin:4px 0 0;color:var(--muted);font-size:12.5px">在上方输入内容后这里会实时更新…</p></div>
+      </div>
+      <div class="drawer-actions">
+        <button class="button small cream" type="button" id="cancel-btn"><span>取消</span></button>
+        <button class="button small mint" type="button" id="save-btn"><span>保存草稿</span></button>
+        <button class="button small" type="button" id="publish-btn"><span>发布 →</span></button>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    const root=document.documentElement;
+    const toggle=document.getElementById('theme-toggle');
+    const saved=localStorage.getItem('playbook-theme');
+    const initial=saved||(matchMedia('(prefers-color-scheme: dark)').matches?'night':'light');
+    function setTheme(theme){root.dataset.theme=theme;if(toggle){toggle.setAttribute('aria-pressed',String(theme==='night'));toggle.setAttribute('aria-label',theme==='night'?'切换日间主题':'切换晚间主题')}localStorage.setItem('playbook-theme',theme)}
+    setTheme(initial);
+    if(toggle)toggle.addEventListener('click',()=>setTheme(root.dataset.theme==='night'?'light':'night'));
+    const menuBtn=document.getElementById('menu-btn');
+    const side=document.getElementById('side-nav');
+    menuBtn.addEventListener('click',()=>{const open=side.classList.toggle('open');menuBtn.setAttribute('aria-expanded',String(open))});
+    document.addEventListener('keydown',e=>{if(e.key==='Escape'){side.classList.remove('open');closeDrawer()}});
+    // 抽屉
+    const drawer=document.getElementById('drawer');
+    const backdrop=document.getElementById('backdrop');
+    const dTitle=document.getElementById('d-title');
+    const dContent=document.getElementById('d-content');
+    const dDate=document.getElementById('d-date');
+    function openDrawer(item){
+      if(item){
+        document.getElementById('drawer-title').textContent='编辑节点';
+        dTitle.value=item.dataset.title||'';
+        dContent.value=item.dataset.content||'';
+        dDate.value=(item.dataset.date||'2026-07-17')+'T10:30';
+      }else{
+        document.getElementById('drawer-title').textContent='新建节点';
+        dTitle.value='';dContent.value='';dDate.value='';
+      }
+      updatePreview();
+      drawer.classList.add('open');backdrop.classList.add('show');
+      dDate.focus();
+    }
+    function closeDrawer(){drawer.classList.remove('open');backdrop.classList.remove('show')}
+    document.querySelectorAll('.item').forEach(item=>item.addEventListener('click',()=>openDrawer(item)));
+    document.getElementById('new-btn').addEventListener('click',()=>openDrawer(null));
+    document.getElementById('cancel-btn').addEventListener('click',closeDrawer);
+    backdrop.addEventListener('click',closeDrawer);
+    function updatePreview(){
+      document.getElementById('preview-title').textContent=dTitle.value||'（未命名节点）';
+      document.getElementById('preview-content').textContent=dContent.value||'在上方输入内容后这里会实时更新…';
+    }
+    dTitle.addEventListener('input',updatePreview);
+    dContent.addEventListener('input',updatePreview);
+    // 类型单选
+    document.querySelectorAll('.type-opt').forEach(opt=>opt.addEventListener('click',()=>{
+      document.querySelectorAll('.type-opt').forEach(o=>o.setAttribute('aria-pressed','false'));
+      opt.setAttribute('aria-pressed','true');
+    }));
+    // 保存/发布反馈
+    ['save-btn','publish-btn'].forEach(id=>{
+      document.getElementById(id).addEventListener('click',e=>{
+        const b=e.currentTarget;const span=b.querySelector('span');const orig=span.textContent;
+        b.disabled=true;span.textContent='保存中…';
+        setTimeout(()=>{b.disabled=false;span.textContent=orig;closeDrawer()},700);
+      });
+    });
+    // 筛选（演示）
+    const q=document.getElementById('tl-q');
+    function filterItems(){
+      const kw=(q.value||'').trim().toLowerCase();
+      document.querySelectorAll('.item').forEach(it=>{
+        it.style.display=!kw||it.textContent.toLowerCase().includes(kw)?'':'none';
+      });
+    }
+    q.addEventListener('input',filterItems);
+  </script>
+</body>
+</html>

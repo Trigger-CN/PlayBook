@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Playbook 页面设计 Demo 索引 - 按 docs/design/pages 文档实现的全部页面原型">
+  <title>Playbook - 页面 Demo 索引</title>
+  <style>
+    :root{--canvas:#fffdf8;--ink:#211522;--muted:#765f73;--line:rgba(72,42,62,.12);--surface:#fff;--soft:#fff0e6;--coral:#ff656c;--coral-base:#72002f;--pink:#f58bc5;--pink-base:#9b078b;--cream:#ffe5c5;--cream-base:#b78122;--mint:#82e2bf;--mint-base:#146044;--sky:#8dd1ff;--sky-base:#1c6199;--lilac:#e989ee;--lilac-base:#90009d;--shell:#ffc9cb;--grid:rgba(72,42,62,.08);--shadow:0 9px 0 rgba(114,0,47,.13)}
+    [data-theme=night]{--canvas:#21162c;--ink:#fff9f1;--muted:#cdbbd0;--line:rgba(255,230,204,.14);--surface:#31223d;--soft:#3e2b4a;--coral:#ff7379;--coral-base:#5a082e;--pink:#e995d8;--pink-base:#70106e;--cream:#ffdfaa;--cream-base:#76511d;--mint:#7fe0bd;--mint-base:#104934;--sky:#82c7f2;--sky-base:#153e6e;--lilac:#d49aff;--lilac-base:#4b246e;--shell:#4a304f;--grid:rgba(255,230,204,.08);--shadow:0 9px 0 rgba(15,6,21,.3)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background-color:var(--canvas);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:32px 32px;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Noto Sans SC",sans-serif;transition:background-color .25s,color .25s}button{font:inherit;color:inherit}a{color:inherit;text-decoration:none}
+    .page{width:min(1180px,calc(100% - 40px));margin:auto;padding-bottom:72px}
+    .header{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:28px 0 10px}.brand{display:inline-flex;align-items:center;gap:11px;font-family:Georgia,"Noto Serif SC",serif;font-size:24px;font-weight:700}.mark{width:36px;height:36px;display:grid;place-items:center;border-radius:12px;background:var(--coral);box-shadow:0 6px 0 var(--coral-base);transform:rotate(-7deg)}.mark i{display:block;width:15px;height:15px;border:3px solid var(--ink);border-radius:50%}
+    .toggle{position:relative;width:74px;height:39px;padding:0;border:0;border-radius:99px;cursor:pointer;background:transparent}.toggle:before{content:"";position:absolute;inset:6px 0 0;border-radius:inherit;background:var(--pink-base)}.toggle-top{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:4px 8px;border-radius:inherit;color:#28152b;background:var(--pink);transition:transform .12s}.knob{width:27px;height:27px;border-radius:50%;background:var(--cream);box-shadow:inset -3px -3px 0 rgba(100,61,0,.12);transition:transform .2s}[data-theme=night] .knob{transform:translateX(27px)}.toggle:active .toggle-top{transform:translateY(5px)}
+    :focus-visible{outline:4px solid var(--sky);outline-offset:4px}
+    h1{margin:24px 0 10px;font-family:Georgia,"Noto Serif SC",serif;font-size:clamp(32px,5vw,46px);line-height:1.05}
+    .lead{max-width:680px;margin:0 0 14px;color:var(--muted);font-size:16px;line-height:1.75}
+    .hint{color:var(--muted);font-size:12.5px;font-weight:700}.hint a{text-decoration:underline;text-underline-offset:3px}
+    .section{margin-top:44px}.section>h2{margin:0 0 18px;font-family:Georgia,"Noto Serif SC",serif;font-size:26px}
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+    .card{--cap:var(--cream);--base:var(--cream-base);display:flex;flex-direction:column;gap:9px;margin-bottom:9px;padding:19px;border:1px solid var(--line);border-radius:18px;background:var(--cap);box-shadow:0 8px 0 var(--base);transform:translateY(-8px);transition:transform .12s,box-shadow .12s,filter .15s}
+    .card:hover{transform:translateY(-11px);box-shadow:0 11px 0 var(--base);filter:brightness(1.03)}
+    .card:active{transform:translateY(-1px);box-shadow:0 1px 0 var(--base)}
+    .card:nth-child(3n+2){--cap:color-mix(in srgb,var(--coral) 24%,var(--surface));--base:var(--coral-base)}
+    .card:nth-child(3n){--cap:color-mix(in srgb,var(--mint) 30%,var(--surface));--base:var(--mint-base)}
+    .card .no{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:11px;background:rgba(33,21,34,.12);font-family:Georgia,serif;font-size:15px;font-weight:900}
+    .card b{font-size:16.5px;line-height:1.3}
+    .card small{color:rgba(33,21,34,.65);font-size:12px;font-weight:650;line-height:1.55}
+    .card .route{display:inline-block;margin-top:2px;padding:3px 9px;border-radius:99px;background:rgba(33,21,34,.1);color:rgba(33,21,34,.7);font-size:10.5px;font-weight:800;font-family:ui-monospace,Consolas,monospace}
+    footer{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:38px 4px 0;color:var(--muted);font-size:12px;font-weight:650}footer a{color:var(--muted)}footer a:hover{color:var(--ink)}
+    @media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:600px){.page{width:min(100% - 28px,1180px)}.header{padding-top:18px}.grid{grid-template-columns:1fr}footer{display:block;line-height:1.7}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="header">
+      <a class="brand" href="01-home.html"><span class="mark"><i></i></span>Playbook</a>
+      <button class="toggle" id="theme-toggle" type="button" aria-label="切换晚间主题" aria-pressed="false"><span class="toggle-top">☼<span class="knob"></span>☾</span></button>
+    </header>
+
+    <h1>页面设计 Demo 索引</h1>
+    <p class="lead">以下 15 个页面原型按照 <code>docs/design/pages</code> 的设计文档逐一实现，视觉语言完全继承 <code>demo/theme-system-demo.html</code> 的玩具盒主题系统：六色 cap/base 色对、立体按压反馈、日夜双主题与网格背景。所有页面均可点击跳转、即时切换主题。</p>
+    <p class="hint">参考：<a href="../theme-system-demo.html">theme-system-demo.html（主题系统原始 Demo）</a> · 设计文档：<a href="../../docs/design/README.md">docs/design/README.md</a></p>
+
+    <section class="section" aria-labelledby="public-h">
+      <h2 id="public-h">公开站点（7 页）</h2>
+      <div class="grid">
+        <a class="card" href="01-home.html"><span class="no">01</span><b>首页</b><small>Hero、快捷入口、统计摘要、最近内容、活跃流</small><span class="route">/</span></a>
+        <a class="card" href="02-post-discovery.html"><span class="no">02</span><b>文章发现页</b><small>搜索、标签/分类筛选、排序、分页、空状态</small><span class="route">/posts</span></a>
+        <a class="card" href="03-post-detail.html"><span class="no">03</span><b>文章详情页</b><small>正文阅读、目录、代码块、表格、点赞评论</small><span class="route">/posts/[slug]</span></a>
+        <a class="card" href="04-timeline-list.html"><span class="no">04</span><b>时间轴列表页</b><small>年月分组、类型筛选、年份导航、连接线</small><span class="route">/timeline</span></a>
+        <a class="card" href="05-timeline-detail.html"><span class="no">05</span><b>时间轴详情页</b><small>节点内容、图片画廊、外链、相邻导航、互动</small><span class="route">/timeline/[id]</span></a>
+        <a class="card" href="06-about.html"><span class="no">06</span><b>关于页</b><small>个人主视觉、经历时间线、项目卡、联系方式</small><span class="route">/about</span></a>
+        <a class="card" href="07-stats.html"><span class="no">07</span><b>公开统计页</b><small>核心指标、趋势图、内容分布、热门排行</small><span class="route">/stats</span></a>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="admin-h">
+      <h2 id="admin-h">后台管理（7 页 + 登录）</h2>
+      <div class="grid">
+        <a class="card" href="08-admin-auth-shell.html"><span class="no">08</span><b>后台登录</b><small>居中登录卡、魔法链接、主题开关、noindex</small><span class="route">/admin/login</span></a>
+        <a class="card" href="09-admin-dashboard.html"><span class="no">09</span><b>后台仪表盘</b><small>左侧导航外壳、待办条、摘要、最近工作区</small><span class="route">/admin</span></a>
+        <a class="card" href="10-admin-posts.html"><span class="no">10</span><b>后台文章管理</b><small>紧凑表格、状态筛选、批量栏、文件型模式说明</small><span class="route">/admin/posts</span></a>
+        <a class="card" href="11-admin-timeline.html"><span class="no">11</span><b>后台时间轴管理</b><small>列表卡片、右侧编辑抽屉、类型选择、实时预览</small><span class="route">/admin/timeline</span></a>
+        <a class="card" href="12-admin-comments.html"><span class="no">12</span><b>后台评论审核</b><small>状态标签、双栏审核队列、详情面板、批量操作</small><span class="route">/admin/comments</span></a>
+        <a class="card" href="13-admin-analytics.html"><span class="no">13</span><b>后台分析页</b><small>时间范围工具栏、趋势图、内容排行、异常事件</small><span class="route">/admin/analytics</span></a>
+        <a class="card" href="14-admin-settings.html"><span class="no">14</span><b>后台设置页</b><small>分区导航、独立保存、主题色对预览、危险区隔离</small><span class="route">/admin/settings</span></a>
+      </div>
+    </section>
+
+    <footer>
+      <span>Playbook page demos · 视觉系统与 theme-system-demo.html 一致</span>
+      <span>日夜主题即时切换 · 390px 移动适配 · prefers-reduced-motion</span>
+    </footer>
+  </main>
+  <script>
+    const root=document.documentElement;
+    const toggle=document.getElementById('theme-toggle');
+    const saved=localStorage.getItem('playbook-theme');
+    const initial=saved||(matchMedia('(prefers-color-scheme: dark)').matches?'night':'light');
+    function setTheme(theme){root.dataset.theme=theme;if(toggle){toggle.setAttribute('aria-pressed',String(theme==='night'));toggle.setAttribute('aria-label',theme==='night'?'切换日间主题':'切换晚间主题')}localStorage.setItem('playbook-theme',theme)}
+    setTheme(initial);
+    if(toggle)toggle.addEventListener('click',()=>setTheme(root.dataset.theme==='night'?'light':'night'));
+  </script>
+</body>
+</html>

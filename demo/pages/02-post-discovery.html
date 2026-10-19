@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Playbook 个人内容站 - 文章发现页设计 Demo">
+  <title>Playbook - 文章发现</title>
+  <style>
+    :root{--canvas:#fffdf8;--ink:#211522;--muted:#765f73;--line:rgba(72,42,62,.12);--surface:#fff;--soft:#fff0e6;--coral:#ff656c;--coral-base:#72002f;--pink:#f58bc5;--pink-base:#9b078b;--cream:#ffe5c5;--cream-base:#b78122;--mint:#82e2bf;--mint-base:#146044;--sky:#8dd1ff;--sky-base:#1c6199;--lilac:#e989ee;--lilac-base:#90009d;--shell:#ffc9cb;--grid:rgba(72,42,62,.08);--shadow:0 9px 0 rgba(114,0,47,.13)}
+    [data-theme=night]{--canvas:#21162c;--ink:#fff9f1;--muted:#cdbbd0;--line:rgba(255,230,204,.14);--surface:#31223d;--soft:#3e2b4a;--coral:#ff7379;--coral-base:#5a082e;--pink:#e995d8;--pink-base:#70106e;--cream:#ffdfaa;--cream-base:#76511d;--mint:#7fe0bd;--mint-base:#104934;--sky:#82c7f2;--sky-base:#153e6e;--lilac:#d49aff;--lilac-base:#4b246e;--shell:#4a304f;--grid:rgba(255,230,204,.08);--shadow:0 9px 0 rgba(15,6,21,.3)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background-color:var(--canvas);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:32px 32px;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Noto Sans SC",sans-serif;transition:background-color .25s,color .25s}button,input,textarea,select{font:inherit}button{color:inherit}a{color:inherit;text-decoration:none}
+    .skip{position:absolute;left:-9999px;z-index:50;padding:10px 16px;border-radius:0 0 12px 0;background:var(--coral);color:#fff;font-weight:800}.skip:focus{left:0}
+    .page{width:min(1180px,calc(100% - 40px));margin:auto;padding-bottom:72px}
+    .header{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:28px 0 24px}.brand{display:inline-flex;align-items:center;gap:11px;font-family:Georgia,"Noto Serif SC",serif;font-size:24px;font-weight:700}.mark{width:36px;height:36px;display:grid;place-items:center;border-radius:12px;background:var(--coral);box-shadow:0 6px 0 var(--coral-base);transform:rotate(-7deg)}.mark i{display:block;width:15px;height:15px;border:3px solid var(--ink);border-radius:50%}
+    .nav{display:flex;align-items:center;gap:18px;font-size:14px;font-weight:750}.nav a{color:var(--muted)}.nav a:hover{color:var(--ink)}.nav a[aria-current=page]{color:var(--ink);text-decoration:underline;text-decoration-color:var(--coral);text-decoration-thickness:3px;text-underline-offset:6px}
+    .toggle{position:relative;width:74px;height:39px;padding:0;border:0;border-radius:99px;cursor:pointer;background:transparent}.toggle:before{content:"";position:absolute;inset:6px 0 0;border-radius:inherit;background:var(--pink-base)}.toggle-top{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:4px 8px;border-radius:inherit;color:#28152b;background:var(--pink);transition:transform .12s}.knob{width:27px;height:27px;border-radius:50%;background:var(--cream);box-shadow:inset -3px -3px 0 rgba(100,61,0,.12);transition:transform .2s}[data-theme=night] .knob{transform:translateX(27px)}.toggle:active .toggle-top{transform:translateY(5px)}
+    :focus-visible{outline:4px solid var(--sky);outline-offset:4px}
+    .section{margin-top:44px}.heading{display:flex;align-items:end;justify-content:space-between;gap:24px;margin-bottom:22px}.heading h2{margin:0;font-family:Georgia,"Noto Serif SC",serif;font-size:30px;line-height:1.05}.heading p{max-width:560px;margin:0;color:var(--muted);font-size:14px;text-align:right}
+    .button{--cap:var(--coral);--base:var(--coral-base);position:relative;display:inline-grid;min-height:52px;place-items:center;padding:0 0 8px;border:0;border-radius:16px;cursor:pointer;background:var(--base);font-weight:850}.button>span{display:inline-flex;align-items:center;justify-content:center;gap:9px;width:100%;min-height:52px;padding:0 21px;border-radius:inherit;background:var(--cap);transform:translateY(-8px);transition:transform .11s,filter .15s}.button:hover>span{transform:translateY(-11px);filter:brightness(1.035) saturate(1.05)}.button:active>span{transform:translateY(-2px)}.button.pink{--cap:var(--pink);--base:var(--pink-base)}.button.cream{--cap:var(--cream);--base:var(--cream-base);color:#42220e}.button.mint{--cap:var(--mint);--base:var(--mint-base);color:#10392b}.button.sky{--cap:var(--sky);--base:var(--sky-base);color:#15344e}.button.small{min-height:42px;padding:0 0 7px;border-radius:13px;font-size:13px}.button.small>span{min-height:42px;padding:0 14px;transform:translateY(-7px)}.button.small:hover>span{transform:translateY(-9px)}.button.small:active>span{transform:translateY(-1px)}
+    footer{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:38px 4px 0;color:var(--muted);font-size:12px;font-weight:650}footer a{color:var(--muted)}footer a:hover{color:var(--ink)}
+    /* 发现页 */
+    .crumbs{padding:6px 0 0;color:var(--muted);font-size:13px;font-weight:700}.crumbs a{color:var(--muted)}.crumbs a:hover{color:var(--ink)}.crumbs b{color:var(--ink)}
+    .page-head h1{margin:14px 0 10px;font-family:Georgia,"Noto Serif SC",serif;font-size:clamp(34px,5vw,46px);line-height:1.05}.page-head p{margin:0;max-width:640px;color:var(--muted);font-size:15px;line-height:1.7}.result-note{margin-top:14px;color:var(--muted);font-size:13px;font-weight:700}
+    .toolbar{display:grid;grid-template-columns:1fr auto auto;gap:14px;align-items:center;margin-top:26px;padding:18px;border:1px solid var(--line);border-radius:20px;background:var(--surface)}
+    .search{display:flex;align-items:center;gap:10px;padding:0 6px 0 14px;border:2px solid var(--line);border-radius:14px;background:var(--soft)}.search input{flex:1;min-width:0;padding:12px 0;border:0;color:var(--ink);background:transparent;font-size:14px;font-weight:600}.search input:focus{outline:none}.search:focus-within{border-color:var(--sky)}.search .icon{color:var(--muted);font-size:15px}
+    select{padding:11px 14px;border:2px solid var(--line);border-radius:14px;color:var(--ink);background:var(--soft);font-size:13px;font-weight:700;cursor:pointer}
+    .chips{display:flex;flex-wrap:wrap;gap:12px;margin-top:18px}.chip{--chip-cap:var(--cream);--chip-base:var(--cream-base);padding:8px 12px;border:0;border-radius:999px;cursor:pointer;background:var(--chip-cap);box-shadow:0 5px 0 var(--chip-base);color:#432b1b;font-size:12px;font-weight:800;transform:translateY(-5px);transition:transform .11s,box-shadow .11s,filter .15s}.chip:hover{transform:translateY(-7px);box-shadow:0 7px 0 var(--chip-base);filter:brightness(1.03)}.chip:active{transform:translateY(-1px);box-shadow:0 1px 0 var(--chip-base)}.chip[aria-pressed=true],.chip[aria-current=true]{--chip-cap:var(--pink);--chip-base:var(--pink-base);color:#341624}
+    .layout{display:grid;grid-template-columns:1.4fr .9fr;gap:26px;align-items:start;margin-top:30px}
+    .post-list{display:grid;gap:15px}.post{--card-base:var(--coral-base);display:grid;grid-template-columns:130px 1fr;gap:18px;margin-bottom:8px;padding:15px;border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:0 8px 0 var(--card-base);transform:translateY(-8px);cursor:pointer;transition:transform .12s,box-shadow .12s,filter .15s}.post:nth-child(2n){--card-base:var(--mint-base)}.post:nth-child(3n){--card-base:var(--sky-base)}.post:nth-child(4n){--card-base:var(--lilac-base)}.post:hover{transform:translateY(-11px);box-shadow:0 11px 0 var(--card-base);filter:brightness(1.02)}.post:active{transform:translateY(-1px);box-shadow:0 1px 0 var(--card-base)}.art{display:grid;min-height:118px;place-items:center;overflow:hidden;border-radius:13px;background:var(--cream);font-size:44px}.post:nth-child(2n) .art{background:var(--mint)}.post:nth-child(3n) .art{background:var(--sky)}.post:nth-child(4n) .art{background:var(--lilac)}.meta{color:var(--muted);font-size:12px;font-weight:700}.post h3{margin:6px 0;font-family:Georgia,"Noto Serif SC",serif;font-size:20px;line-height:1.25}.post h3 a{color:inherit}.post p{margin:0;color:var(--muted);font-size:13px;line-height:1.6}.tags{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}.tag{padding:4px 8px;border-radius:999px;background:var(--soft);color:var(--muted);font-size:11px;font-weight:750}.tag:hover{color:var(--ink)}
+    .pager{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:28px}.pager .info{color:var(--muted);font-size:13px;font-weight:700}
+    .side{display:grid;gap:22px}.panel{padding:20px;border:1px solid var(--line);border-radius:20px;background:var(--surface)}.panel h3{margin:0 0 14px;font-size:15px}.side .chips{margin-top:4px}
+    .featured-mini{display:grid;gap:10px}.fm{display:grid;grid-template-columns:44px 1fr;gap:12px;align-items:center;padding:10px;border:1px solid var(--line);border-radius:14px;background:var(--soft)}.fm .fa{display:grid;place-items:center;width:44px;height:44px;border-radius:11px;background:var(--coral);font-size:19px}.fm:nth-child(2) .fa{background:var(--mint)}.fm:nth-child(3) .fa{background:var(--sky)}.fm b{font-size:13px;line-height:1.35}.fm small{display:block;color:var(--muted);font-size:11px;font-weight:700;margin-top:2px}
+    .empty{display:none;padding:34px 22px;border:2px dashed var(--line);border-radius:20px;background:var(--soft);text-align:center}.empty.show{display:block}.empty b{display:block;margin-bottom:8px;font-size:16px}.empty p{margin:0 0 18px;color:var(--muted);font-size:13px;line-height:1.6}
+    @media(max-width:900px){.layout{grid-template-columns:1fr}.toolbar{grid-template-columns:1fr}.toolbar select{width:100%}}
+    @media(max-width:600px){.page{width:min(100% - 28px,1180px)}.header{padding-top:18px}.nav a{display:none}.heading{display:block}.heading p{text-align:left;margin-top:9px}.post{grid-template-columns:1fr}.art{min-height:96px}footer{display:block;line-height:1.7}.chips{gap:10px}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">跳到主内容</a>
+  <main class="page" id="main">
+    <header class="header">
+      <a class="brand" href="01-home.html"><span class="mark"><i></i></span>Playbook</a>
+      <nav class="nav" aria-label="主导航">
+        <a href="01-home.html">首页</a>
+        <a href="02-post-discovery.html" aria-current="page">文章</a>
+        <a href="04-timeline-list.html">时间轴</a>
+        <a href="06-about.html">关于</a>
+        <a href="07-stats.html">统计</a>
+        <button class="toggle" id="theme-toggle" type="button" aria-label="切换晚间主题" aria-pressed="false"><span class="toggle-top">☼<span class="knob"></span>☾</span></button>
+      </nav>
+    </header>
+
+    <nav class="crumbs" aria-label="面包屑"><a href="01-home.html">首页</a> / <b>文章</b></nav>
+    <div class="page-head">
+      <h1>文章</h1>
+      <p>浏览全部写作，或通过标签、分类与关键词找到感兴趣的内容。筛选条件写入 URL，可分享、可恢复。</p>
+      <p class="result-note" id="result-note" aria-live="polite">共 48 篇文章 · 当前显示最新 6 篇</p>
+    </div>
+
+    <section class="toolbar" aria-label="筛选工具栏">
+      <form class="search" role="search" onsubmit="return false">
+        <label class="icon" for="q" aria-hidden="true">⌕</label>
+        <input id="q" type="search" placeholder="搜索标题、摘要、标签…" autocomplete="off">
+        <button class="button small sky" type="button" id="clear-btn"><span>清除</span></button>
+      </form>
+      <label for="sort" class="visually-hidden" style="position:absolute;left:-9999px">排序方式</label>
+      <select id="sort">
+        <option value="published">最新发布</option>
+        <option value="updated">最近更新</option>
+        <option value="featured">精选优先</option>
+      </select>
+    </section>
+
+    <div class="chips" role="group" aria-label="分类筛选">
+      <button class="chip" type="button" aria-pressed="true">全部</button>
+      <button class="chip" type="button" aria-pressed="false">设计系统</button>
+      <button class="chip" type="button" aria-pressed="false">前端</button>
+      <button class="chip" type="button" aria-pressed="false">生活</button>
+      <button class="chip" type="button" aria-pressed="false">项目记录</button>
+    </div>
+
+    <div class="layout">
+      <section aria-label="文章列表">
+        <div class="post-list" id="post-list">
+          <article class="post">
+            <a class="art" href="03-post-detail.html" aria-hidden="true" tabindex="-1">✹</a>
+            <div>
+              <div class="meta">2026.07.17 · 8 min read · <a href="#" onclick="return false">设计系统</a></div>
+              <h3><a href="03-post-detail.html">我把个人网站做成了一台可玩的记录机</a></h3>
+              <p>从按钮触感开始，为长期内容建立一组会说话的视觉规则。</p>
+              <div class="tags"><a class="tag" href="#" onclick="return false">设计系统</a><a class="tag" href="#" onclick="return false">随笔</a></div>
+            </div>
+          </article>
+          <article class="post">
+            <a class="art" href="03-post-detail.html" aria-hidden="true" tabindex="-1">⌘</a>
+            <div>
+              <div class="meta">2026.07.09 · 6 min read · <a href="#" onclick="return false">前端</a></div>
+              <h3><a href="03-post-detail.html">不用复杂动效，也能让界面显得有生命</a></h3>
+              <p>用位移、底座和适度的颜色变化，完成简洁但明确的反馈。</p>
+              <div class="tags"><a class="tag" href="#" onclick="return false">交互</a><a class="tag" href="#" onclick="return false">前端</a></div>
+            </div>
+          </article>
+          <article class="post">
+            <a class="art" href="03-post-detail.html" aria-hidden="true" tabindex="-1">☼</a>
+            <div>
+              <div class="meta">2026.06.28 · 4 min read · <a href="#" onclick="return false">生活</a></div>
+              <h3><a href="03-post-detail.html">七月之前，整理一份慢慢变清晰的清单</a></h3>
+              <p>生活、项目和阅读都被安放在同一条可回看的时间里。</p>
+              <div class="tags"><a class="tag" href="#" onclick="return false">生活</a><a class="tag" href="#" onclick="return false">清单</a></div>
+            </div>
+          </article>
+          <article class="post">
+            <a class="art" href="03-post-detail.html" aria-hidden="true" tabindex="-1">✺</a>
+            <div>
+              <div class="meta">2026.06.15 · 11 min read · <a href="#" onclick="return false">前端</a></div>
+              <h3><a href="03-post-detail.html">给个人站接上 Supabase：一次数据层的实践笔记</a></h3>
+              <p>从 RLS 策略到乐观锁，记录把互动数据放进数据库的过程。</p>
+              <div class="tags"><a class="tag" href="#" onclick="return false">Supabase</a><a class="tag" href="#" onclick="return false">实践</a></div>
+            </div>
+          </article>
+          <article class="post">
+            <a class="art" href="03-post-detail.html" aria-hidden="true" tabindex="-1">◐</a>
+            <div>
+              <div class="meta">2026.05.30 · 7 min read · <a href="#" onclick="return false">设计系统</a></div>
+              <h3><a href="03-post-detail.html">夜间主题不是把颜色调暗那么简单</a></h3>
+              <p>六个色对、一套底座，让玩具盒在夜里也保持明确的层次。</p>
+              <div class="tags"><a class="tag" href="#" onclick="return false">主题</a><a class="tag" href="#" onclick="return false">对比度</a></div>
+            </div>
+          </article>
+          <article class="post">
+            <a class="art" href="03-post-detail.html" aria-hidden="true" tabindex="-1">✦</a>
+            <div>
+              <div class="meta">2026.05.12 · 5 min read · <a href="#" onclick="return false">项目记录</a></div>
+              <h3><a href="03-post-detail.html">用 MDX 管理长期内容的一些取舍</a></h3>
+              <p>构建期校验、白名单组件和目录生成，如何各司其职。</p>
+              <div class="tags"><a class="tag" href="#" onclick="return false">MDX</a><a class="tag" href="#" onclick="return false">工具链</a></div>
+            </div>
+          </article>
+        </div>
+
+        <div class="empty" id="empty-state">
+          <b>没有匹配的文章</b>
+          <p>当前筛选条件下没有找到内容。试试清除筛选或换个关键词。</p>
+          <button class="button small mint" type="button" id="empty-clear"><span>清除全部筛选</span></button>
+        </div>
+
+        <div class="pager">
+          <button class="button small cream" type="button"><span>← 上一页</span></button>
+          <span class="info">第 1 / 8 页</span>
+          <button class="button small cream" type="button"><span>下一页 →</span></button>
+        </div>
+      </section>
+
+      <aside class="side" aria-label="辅助信息">
+        <div class="panel">
+          <h3>热门标签</h3>
+          <div class="chips">
+            <button class="chip" type="button" aria-pressed="false">设计系统 · 12</button>
+            <button class="chip" type="button" aria-pressed="false">前端 · 9</button>
+            <button class="chip" type="button" aria-pressed="false">生活 · 7</button>
+            <button class="chip" type="button" aria-pressed="false">实践 · 6</button>
+            <button class="chip" type="button" aria-pressed="false">工具链 · 4</button>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>分类</h3>
+          <div class="chips">
+            <button class="chip" type="button" aria-pressed="false">设计系统 · 12</button>
+            <button class="chip" type="button" aria-pressed="false">前端 · 9</button>
+            <button class="chip" type="button" aria-pressed="false">生活 · 7</button>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>精选文章</h3>
+          <div class="featured-mini">
+            <a class="fm" href="03-post-detail.html"><span class="fa" aria-hidden="true">✹</span><span><b>我把个人网站做成了一台可玩的记录机</b><small>2026.07.17 · 8 min</small></span></a>
+            <a class="fm" href="03-post-detail.html"><span class="fa" aria-hidden="true">⌘</span><span><b>不用复杂动效，也能让界面显得有生命</b><small>2026.07.09 · 6 min</small></span></a>
+            <a class="fm" href="03-post-detail.html"><span class="fa" aria-hidden="true">◐</span><span><b>夜间主题不是把颜色调暗那么简单</b><small>2026.05.30 · 7 min</small></span></a>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <footer>
+      <span>© 2026 Playbook · 用心按下每一次更新</span>
+      <span><a href="01-home.html">首页</a> · <a href="04-timeline-list.html">时间轴</a> · <a href="index.html">Demo 索引</a></span>
+    </footer>
+  </main>
+  <script>
+    const root=document.documentElement;
+    const toggle=document.getElementById('theme-toggle');
+    const saved=localStorage.getItem('playbook-theme');
+    const initial=saved||(matchMedia('(prefers-color-scheme: dark)').matches?'night':'light');
+    function setTheme(theme){root.dataset.theme=theme;if(toggle){toggle.setAttribute('aria-pressed',String(theme==='night'));toggle.setAttribute('aria-label',theme==='night'?'切换日间主题':'切换晚间主题')}localStorage.setItem('playbook-theme',theme)}
+    setTheme(initial);
+    if(toggle)toggle.addEventListener('click',()=>setTheme(root.dataset.theme==='night'?'light':'night'));
+    // 筛选交互：chip 单选、空状态切换、结果数更新
+    const chips=[...document.querySelectorAll('.chips[aria-label="分类筛选"] .chip')];
+    const list=document.getElementById('post-list');
+    const emptyState=document.getElementById('empty-state');
+    const note=document.getElementById('result-note');
+    const q=document.getElementById('q');
+    function applyFilter(){
+      const active=chips.find(c=>c.getAttribute('aria-pressed')==='true');
+      const kw=(q.value||'').trim().toLowerCase();
+      let shown=0,total=0;
+      list.querySelectorAll('.post').forEach(post=>{
+        total++;
+        const text=post.textContent.toLowerCase();
+        const matchChip=active&&active.textContent.trim()==='全部'?!0:text.includes(active.textContent.split('·')[0].trim());
+        const matchKw=!kw||text.includes(kw);
+        const show=matchChip&&matchKw;
+        post.style.display=show?'':'none';
+        if(show)shown++;
+      });
+      emptyState.classList.toggle('show',shown===0);
+      note.textContent='筛选出 '+shown+' / '+total+' 篇文章';
+    }
+    chips.forEach(chip=>chip.addEventListener('click',()=>{
+      chips.forEach(c=>c.setAttribute('aria-pressed','false'));
+      chip.setAttribute('aria-pressed','true');
+      applyFilter();
+    }));
+    q.addEventListener('input',applyFilter);
+    document.getElementById('clear-btn').addEventListener('click',()=>{
+      q.value='';applyFilter();
+    });
+    document.getElementById('empty-clear').addEventListener('click',()=>{
+      q.value='';
+      chips.forEach((c,i)=>c.setAttribute('aria-pressed',i===0?'true':'false'));
+      applyFilter();
+    });
+    document.getElementById('sort').addEventListener('change',applyFilter);
+  </script>
+</body>
+</html>

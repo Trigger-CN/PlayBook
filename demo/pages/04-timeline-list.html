@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Playbook 个人内容站 - 时间轴列表页设计 Demo">
+  <title>Playbook - 时间轴</title>
+  <style>
+    :root{--canvas:#fffdf8;--ink:#211522;--muted:#765f73;--line:rgba(72,42,62,.12);--surface:#fff;--soft:#fff0e6;--coral:#ff656c;--coral-base:#72002f;--pink:#f58bc5;--pink-base:#9b078b;--cream:#ffe5c5;--cream-base:#b78122;--mint:#82e2bf;--mint-base:#146044;--sky:#8dd1ff;--sky-base:#1c6199;--lilac:#e989ee;--lilac-base:#90009d;--shell:#ffc9cb;--grid:rgba(72,42,62,.08);--shadow:0 9px 0 rgba(114,0,47,.13)}
+    [data-theme=night]{--canvas:#21162c;--ink:#fff9f1;--muted:#cdbbd0;--line:rgba(255,230,204,.14);--surface:#31223d;--soft:#3e2b4a;--coral:#ff7379;--coral-base:#5a082e;--pink:#e995d8;--pink-base:#70106e;--cream:#ffdfaa;--cream-base:#76511d;--mint:#7fe0bd;--mint-base:#104934;--sky:#82c7f2;--sky-base:#153e6e;--lilac:#d49aff;--lilac-base:#4b246e;--shell:#4a304f;--grid:rgba(255,230,204,.08);--shadow:0 9px 0 rgba(15,6,21,.3)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background-color:var(--canvas);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:32px 32px;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Noto Sans SC",sans-serif;transition:background-color .25s,color .25s}button,input,textarea,select{font:inherit}button{color:inherit}a{color:inherit;text-decoration:none}
+    .skip{position:absolute;left:-9999px;z-index:50;padding:10px 16px;border-radius:0 0 12px 0;background:var(--coral);color:#fff;font-weight:800}.skip:focus{left:0}
+    .page{width:min(1180px,calc(100% - 40px));margin:auto;padding-bottom:72px}
+    .header{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:28px 0 24px}.brand{display:inline-flex;align-items:center;gap:11px;font-family:Georgia,"Noto Serif SC",serif;font-size:24px;font-weight:700}.mark{width:36px;height:36px;display:grid;place-items:center;border-radius:12px;background:var(--coral);box-shadow:0 6px 0 var(--coral-base);transform:rotate(-7deg)}.mark i{display:block;width:15px;height:15px;border:3px solid var(--ink);border-radius:50%}
+    .nav{display:flex;align-items:center;gap:18px;font-size:14px;font-weight:750}.nav a{color:var(--muted)}.nav a:hover{color:var(--ink)}.nav a[aria-current=page]{color:var(--ink);text-decoration:underline;text-decoration-color:var(--coral);text-decoration-thickness:3px;text-underline-offset:6px}
+    .toggle{position:relative;width:74px;height:39px;padding:0;border:0;border-radius:99px;cursor:pointer;background:transparent}.toggle:before{content:"";position:absolute;inset:6px 0 0;border-radius:inherit;background:var(--pink-base)}.toggle-top{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:4px 8px;border-radius:inherit;color:#28152b;background:var(--pink);transition:transform .12s}.knob{width:27px;height:27px;border-radius:50%;background:var(--cream);box-shadow:inset -3px -3px 0 rgba(100,61,0,.12);transition:transform .2s}[data-theme=night] .knob{transform:translateX(27px)}.toggle:active .toggle-top{transform:translateY(5px)}
+    :focus-visible{outline:4px solid var(--sky);outline-offset:4px}
+    .button{--cap:var(--coral);--base:var(--coral-base);position:relative;display:inline-grid;min-height:52px;place-items:center;padding:0 0 8px;border:0;border-radius:16px;cursor:pointer;background:var(--base);font-weight:850}.button>span{display:inline-flex;align-items:center;justify-content:center;gap:9px;width:100%;min-height:52px;padding:0 21px;border-radius:inherit;background:var(--cap);transform:translateY(-8px);transition:transform .11s,filter .15s}.button:hover>span{transform:translateY(-11px);filter:brightness(1.035) saturate(1.05)}.button:active>span{transform:translateY(-2px)}.button.pink{--cap:var(--pink);--base:var(--pink-base)}.button.cream{--cap:var(--cream);--base:var(--cream-base);color:#42220e}.button.mint{--cap:var(--mint);--base:var(--mint-base);color:#10392b}.button.sky{--cap:var(--sky);--base:var(--sky-base);color:#15344e}.button.small{min-height:42px;padding:0 0 7px;border-radius:13px;font-size:13px}.button.small>span{min-height:42px;padding:0 14px;transform:translateY(-7px)}.button.small:hover>span{transform:translateY(-9px)}.button.small:active>span{transform:translateY(-1px)}
+    footer{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:38px 4px 0;color:var(--muted);font-size:12px;font-weight:650}footer a{color:var(--muted)}footer a:hover{color:var(--ink)}
+    /* 时间轴列表 */
+    .page-head h1{margin:10px 0 10px;font-family:Georgia,"Noto Serif SC",serif;font-size:clamp(34px,5vw,46px);line-height:1.05}.page-head p{margin:0;max-width:640px;color:var(--muted);font-size:15px;line-height:1.7}
+    .summary-row{display:flex;flex-wrap:wrap;gap:12px;margin-top:18px}.sum-chip{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid var(--line);border-radius:99px;background:var(--soft);color:var(--muted);font-size:12.5px;font-weight:750}.sum-chip b{color:var(--ink);font-size:14px}
+    .filters{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:26px;padding:16px 18px;border:1px solid var(--line);border-radius:20px;background:var(--surface)}
+    .filters .group-label{color:var(--muted);font-size:12px;font-weight:800;letter-spacing:.04em}
+    .chip{--chip-cap:var(--cream);--chip-base:var(--cream-base);padding:8px 12px;border:0;border-radius:999px;cursor:pointer;background:var(--chip-cap);box-shadow:0 5px 0 var(--chip-base);color:#432b1b;font-size:12px;font-weight:800;transform:translateY(-5px);transition:transform .11s,box-shadow .11s,filter .15s}.chip:hover{transform:translateY(-7px);box-shadow:0 7px 0 var(--chip-base);filter:brightness(1.03)}.chip:active{transform:translateY(-1px);box-shadow:0 1px 0 var(--chip-base)}.chip[aria-pressed=true]{--chip-cap:var(--pink);--chip-base:var(--pink-base);color:#341624}
+    .layout{display:grid;grid-template-columns:200px 1fr;gap:34px;align-items:start;margin-top:34px}
+    .year-nav{position:sticky;top:24px;display:grid;gap:8px}.year-nav h2{margin:0 0 6px;font-size:12px;letter-spacing:.08em;color:var(--muted)}.yn{--cap:var(--cream);--base:var(--cream-base);position:relative;padding:0 0 6px;border:0;border-radius:13px;cursor:pointer;background:var(--base);text-align:center}.yn span{display:block;padding:9px 0;border-radius:inherit;background:var(--cap);transform:translateY(-6px);font-weight:850;font-size:14px;transition:transform .11s}.yn:hover span{transform:translateY(-8px)}.yn:active span{transform:translateY(-1px)}.yn[aria-current=true]{--cap:var(--coral);--base:var(--coral-base)}
+    .tl-group{margin-bottom:38px}.tl-group>h2{display:flex;align-items:center;gap:12px;margin:0 0 20px;font-family:Georgia,"Noto Serif SC",serif;font-size:24px}.tl-group>h2 a{color:inherit}.tl-group>h2 small{color:var(--muted);font-size:13px;font-weight:700}
+    .tl{position:relative;display:grid;gap:18px;padding-left:30px}.tl:before{content:"";position:absolute;top:8px;bottom:8px;left:9px;width:4px;border-radius:4px;background:var(--pink)}
+    .event{--card-base:var(--coral-base);--dot:var(--coral);--dot-base:var(--coral-base);position:relative;display:grid;grid-template-columns:150px 1fr;gap:18px;margin-bottom:9px;padding:16px;border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:0 8px 0 var(--card-base);transform:translateY(-8px);cursor:pointer;transition:transform .12s,box-shadow .12s,filter .15s}.event:hover{transform:translateY(-11px);box-shadow:0 11px 0 var(--card-base);filter:brightness(1.02)}.event:active{transform:translateY(-1px);box-shadow:0 1px 0 var(--card-base)}.event:before{content:"";position:absolute;top:24px;left:-29px;width:14px;height:14px;border:3px solid var(--surface);border-radius:50%;background:var(--dot);box-shadow:0 0 0 3px var(--dot-base)}
+    .event time{color:var(--muted);font-size:11.5px;font-weight:800}.event h3{margin:4px 0 6px;font-size:17px;line-height:1.3}.event p{margin:0;color:var(--muted);font-size:13px;line-height:1.6}.event .thumb{display:grid;place-items:center;min-height:104px;border-radius:13px;background:var(--soft);font-size:38px}.event .thumb.has-img{background:var(--dot);opacity:.92}
+    .type-chip{display:inline-block;padding:3px 9px;border-radius:99px;background:var(--dot);color:#2b1722;font-size:10px;font-weight:800}
+    .counts{display:flex;gap:14px;margin-top:10px;color:var(--muted);font-size:11.5px;font-weight:800}
+    .t-note{--card-base:var(--cream-base);--dot:var(--cream);--dot-base:var(--cream-base)}.t-milestone{--card-base:var(--coral-base);--dot:var(--coral);--dot-base:var(--coral-base)}.t-project{--card-base:var(--mint-base);--dot:var(--mint);--dot-base:var(--mint-base)}.t-travel{--card-base:var(--sky-base);--dot:var(--sky);--dot-base:var(--sky-base)}.t-reading{--card-base:var(--lilac-base);--dot:var(--lilac);--dot-base:var(--lilac-base)}.t-release{--card-base:var(--pink-base);--dot:var(--pink);--dot-base:var(--pink-base)}
+    .empty{display:none;padding:34px 22px;border:2px dashed var(--line);border-radius:20px;background:var(--soft);text-align:center}.empty.show{display:block}.empty b{display:block;margin-bottom:8px;font-size:16px}.empty p{margin:0 0 18px;color:var(--muted);font-size:13px;line-height:1.6}
+    .load-more{display:flex;justify-content:center;margin-top:8px}
+    @media(max-width:900px){.layout{grid-template-columns:1fr}.year-nav{position:static;grid-auto-flow:column;grid-auto-columns:96px;overflow-x:auto;padding-bottom:8px}.event{grid-template-columns:1fr}.event .thumb{min-height:130px;order:-1}}
+    @media(max-width:600px){.page{width:min(100% - 28px,1180px)}.header{padding-top:18px}.nav a{display:none}footer{display:block;line-height:1.7}.tl{padding-left:24px}.event:before{left:-23px}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">跳到主内容</a>
+  <main class="page" id="main">
+    <header class="header">
+      <a class="brand" href="01-home.html"><span class="mark"><i></i></span>Playbook</a>
+      <nav class="nav" aria-label="主导航">
+        <a href="01-home.html">首页</a>
+        <a href="02-post-discovery.html">文章</a>
+        <a href="04-timeline-list.html" aria-current="page">时间轴</a>
+        <a href="06-about.html">关于</a>
+        <a href="07-stats.html">统计</a>
+        <button class="toggle" id="theme-toggle" type="button" aria-label="切换晚间主题" aria-pressed="false"><span class="toggle-top">☼<span class="knob"></span>☾</span></button>
+      </nav>
+    </header>
+
+    <div class="page-head">
+      <h1>时间轴</h1>
+      <p>按发生时间倒序排列的个人事件、项目进展与里程碑。颜色与图标区分类型，同时保留类型文本；筛选条件写入 URL。</p>
+      <div class="summary-row" aria-label="时间轴摘要">
+        <span class="sum-chip">◐ 节点总数 <b>126</b></span>
+        <span class="sum-chip">⏱ 时间跨度 <b>2019 – 2026</b></span>
+        <span class="sum-chip">✎ 最近更新 <b>2026.07.17</b></span>
+      </div>
+    </div>
+
+    <section class="filters" aria-label="筛选">
+      <span class="group-label">类型</span>
+      <button class="chip" type="button" aria-pressed="true">全部</button>
+      <button class="chip" type="button" aria-pressed="false">笔记</button>
+      <button class="chip" type="button" aria-pressed="false">里程碑</button>
+      <button class="chip" type="button" aria-pressed="false">项目</button>
+      <button class="chip" type="button" aria-pressed="false">出行</button>
+      <button class="chip" type="button" aria-pressed="false">阅读</button>
+      <button class="chip" type="button" aria-pressed="false">发布</button>
+    </section>
+
+    <div class="layout">
+      <nav class="year-nav" aria-label="年份导航">
+        <h2>年份</h2>
+        <button class="yn" type="button" aria-current="true"><span>2026</span></button>
+        <button class="yn" type="button"><span>2025</span></button>
+        <button class="yn" type="button"><span>2024</span></button>
+        <button class="yn" type="button"><span>2023</span></button>
+        <button class="yn" type="button"><span>更早</span></button>
+      </nav>
+
+      <div>
+        <section class="tl-group" aria-labelledby="y2026">
+          <h2 id="y2026"><a href="#y2026">2026 年</a><small>· 18 个节点</small></h2>
+          <div class="tl">
+            <a class="event t-release" href="05-timeline-detail.html">
+              <span class="thumb has-img" aria-hidden="true">✦</span>
+              <div>
+                <time datetime="2026-07-17">2026.07.17</time> <span class="type-chip">RELEASE</span>
+                <h3>主题样式库建立</h3>
+                <p>完成按钮、卡片、统计与互动模块的基调，六个色对全部就位。</p>
+                <div class="counts"><span>♥ 24</span><span>● 5</span><span>↗ 外链</span></div>
+              </div>
+            </a>
+            <a class="event t-project" href="05-timeline-detail.html">
+              <span class="thumb" aria-hidden="true">◐</span>
+              <div>
+                <time datetime="2026-07-14">2026.07.14</time> <span class="type-chip">PROJECT</span>
+                <h3>文章阅读体验调整</h3>
+                <p>更轻的边界与更大的行距，让长文拥有稳定的呼吸感。</p>
+                <div class="counts"><span>♥ 11</span><span>● 2</span></div>
+              </div>
+            </a>
+            <a class="event t-release" href="05-timeline-detail.html">
+              <span class="thumb" aria-hidden="true">▤</span>
+              <div>
+                <time datetime="2026-07-09">2026.07.09</time> <span class="type-chip">RELEASE</span>
+                <h3>组件状态页上线</h3>
+                <p>按钮、筛选、评论的全状态示例集中到一页，方便回归检查。</p>
+                <div class="counts"><span>♥ 18</span><span>● 3</span></div>
+              </div>
+            </a>
+            <a class="event t-travel" href="05-timeline-detail.html">
+              <span class="thumb has-img" aria-hidden="true">⛰</span>
+              <div>
+                <time datetime="2026-07-05">2026.07.05</time> <span class="type-chip">TRAVEL</span>
+                <h3>舟山群岛两日</h3>
+                <p>海边的大风、渔港的清晨，和一整晚没修完的 bug。</p>
+                <div class="counts"><span>♥ 32</span><span>● 7</span></div>
+              </div>
+            </a>
+            <a class="event t-note" href="05-timeline-detail.html">
+              <span class="thumb" aria-hidden="true">✎</span>
+              <div>
+                <time datetime="2026-07-01">2026.07.01</time> <span class="type-chip">NOTE</span>
+                <h3>给页面加一点实体感</h3>
+                <p>取消泛滥阴影，只保留明确可感知的底座。</p>
+                <div class="counts"><span>♥ 9</span><span>● 1</span></div>
+              </div>
+            </a>
+            <a class="event t-reading" href="05-timeline-detail.html">
+              <span class="thumb" aria-hidden="true">◍</span>
+              <div>
+                <time datetime="2026-06-28">2026.06.28</time> <span class="type-chip">READING</span>
+                <h3>读《设计中的设计》</h3>
+                <p>重新理解「日常」与设计之间的关系。</p>
+                <div class="counts"><span>♥ 14</span></div>
+              </div>
+            </a>
+            <a class="event t-milestone" href="05-timeline-detail.html">
+              <span class="thumb" aria-hidden="true">★</span>
+              <div>
+                <time datetime="2026-06-15">2026.06.15</time> <span class="type-chip">MILESTONE</span>
+                <h3>累计有效浏览突破 10,000</h3>
+                <p>小站也慢慢有了自己的读者。</p>
+                <div class="counts"><span>♥ 21</span><span>● 4</span></div>
+              </div>
+            </a>
+          </div>
+        </section>
+
+        <section class="tl-group" aria-labelledby="y2025">
+          <h2 id="y2025"><a href="#y2025">2025 年</a><small>· 26 个节点</small></h2>
+          <div class="tl">
+            <a class="event t-project" href="05-timeline-detail.html">
+              <span class="thumb" aria-hidden="true">⚙</span>
+              <div>
+                <time datetime="2025-12-20">2025.12.20</time> <span class="type-chip">PROJECT</span>
+                <h3>内容管线重构完成</h3>
+                <p>MDX 构建期校验、目录生成与阅读时间计算全部就绪。</p>
+                <div class="counts"><span>♥ 17</span><span>● 2</span></div>
+              </div>
+            </a>
+            <a class="event t-note" href="05-timeline-detail.html">
+              <span class="thumb" aria-hidden="true">✎</span>
+              <div>
+                <time datetime="2025-11-02">2025.11.02</time> <span class="type-chip">NOTE</span>
+                <h3>决定把时间轴做成一级栏目</h3>
+                <p>碎片记录值得一个稳定入口，而不是散落在文章里。</p>
+                <div class="counts"><span>♥ 8</span></div>
+              </div>
+            </a>
+          </div>
+        </section>
+
+        <div class="empty" id="empty-state">
+          <b>没有匹配的节点</b>
+          <p>当前筛选条件下没有找到时间轴节点。</p>
+          <button class="button small mint" type="button" id="empty-clear"><span>清除筛选</span></button>
+        </div>
+
+        <div class="load-more">
+          <button class="button cream" type="button"><span>查看更早记录 ↓</span></button>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      <span>© 2026 Playbook · 用心按下每一次更新</span>
+      <span><a href="01-home.html">首页</a> · <a href="05-timeline-detail.html">节点详情示例</a> · <a href="index.html">Demo 索引</a></span>
+    </footer>
+  </main>
+  <script>
+    const root=document.documentElement;
+    const toggle=document.getElementById('theme-toggle');
+    const saved=localStorage.getItem('playbook-theme');
+    const initial=saved||(matchMedia('(prefers-color-scheme: dark)').matches?'night':'light');
+    function setTheme(theme){root.dataset.theme=theme;if(toggle){toggle.setAttribute('aria-pressed',String(theme==='night'));toggle.setAttribute('aria-label',theme==='night'?'切换日间主题':'切换晚间主题')}localStorage.setItem('playbook-theme',theme)}
+    setTheme(initial);
+    if(toggle)toggle.addEventListener('click',()=>setTheme(root.dataset.theme==='night'?'light':'night'));
+    // 类型筛选 + 空状态
+    const chips=[...document.querySelectorAll('.filters .chip')];
+    const groups=[...document.querySelectorAll('.tl-group')];
+    const emptyState=document.getElementById('empty-state');
+    function applyFilter(){
+      const active=chips.find(c=>c.getAttribute('aria-pressed')==='true');
+      let total=0;
+      groups.forEach(g=>{
+        let shown=0;
+        g.querySelectorAll('.event').forEach(ev=>{
+          const match=!active||active.textContent.trim()==='全部'||ev.querySelector('.type-chip').textContent===active.textContent.trim().toUpperCase();
+          ev.style.display=match?'':'none';
+          if(match){shown++;total++}
+        });
+        g.style.display=shown?'':'none';
+      });
+      emptyState.classList.toggle('show',total===0);
+    }
+    chips.forEach(chip=>chip.addEventListener('click',()=>{
+      chips.forEach(c=>c.setAttribute('aria-pressed','false'));
+      chip.setAttribute('aria-pressed','true');
+      applyFilter();
+    }));
+    document.getElementById('empty-clear').addEventListener('click',()=>{
+      chips.forEach((c,i)=>c.setAttribute('aria-pressed',i===0?'true':'false'));
+      applyFilter();
+    });
+    // 年份导航
+    const years=[...document.querySelectorAll('.yn')];
+    years.forEach(y=>y.addEventListener('click',()=>{
+      years.forEach(o=>o.removeAttribute('aria-current'));
+      y.setAttribute('aria-current','true');
+    }));
+  </script>
+</body>
+</html>

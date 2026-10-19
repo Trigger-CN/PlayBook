@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Playbook 个人内容站 - 公开统计页设计 Demo">
+  <title>统计 - Playbook</title>
+  <style>
+    :root{--canvas:#fffdf8;--ink:#211522;--muted:#765f73;--line:rgba(72,42,62,.12);--surface:#fff;--soft:#fff0e6;--coral:#ff656c;--coral-base:#72002f;--pink:#f58bc5;--pink-base:#9b078b;--cream:#ffe5c5;--cream-base:#b78122;--mint:#82e2bf;--mint-base:#146044;--sky:#8dd1ff;--sky-base:#1c6199;--lilac:#e989ee;--lilac-base:#90009d;--shell:#ffc9cb;--grid:rgba(72,42,62,.08);--shadow:0 9px 0 rgba(114,0,47,.13)}
+    [data-theme=night]{--canvas:#21162c;--ink:#fff9f1;--muted:#cdbbd0;--line:rgba(255,230,204,.14);--surface:#31223d;--soft:#3e2b4a;--coral:#ff7379;--coral-base:#5a082e;--pink:#e995d8;--pink-base:#70106e;--cream:#ffdfaa;--cream-base:#76511d;--mint:#7fe0bd;--mint-base:#104934;--sky:#82c7f2;--sky-base:#153e6e;--lilac:#d49aff;--lilac-base:#4b246e;--shell:#4a304f;--grid:rgba(255,230,204,.08);--shadow:0 9px 0 rgba(15,6,21,.3)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background-color:var(--canvas);background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:32px 32px;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI","Noto Sans SC",sans-serif;transition:background-color .25s,color .25s}button,input,textarea{font:inherit}button{color:inherit}a{color:inherit;text-decoration:none}
+    .skip{position:absolute;left:-9999px;z-index:50;padding:10px 16px;border-radius:0 0 12px 0;background:var(--coral);color:#fff;font-weight:800}.skip:focus{left:0}
+    .page{width:min(1180px,calc(100% - 40px));margin:auto;padding-bottom:72px}
+    .header{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:28px 0 24px}.brand{display:inline-flex;align-items:center;gap:11px;font-family:Georgia,"Noto Serif SC",serif;font-size:24px;font-weight:700}.mark{width:36px;height:36px;display:grid;place-items:center;border-radius:12px;background:var(--coral);box-shadow:0 6px 0 var(--coral-base);transform:rotate(-7deg)}.mark i{display:block;width:15px;height:15px;border:3px solid var(--ink);border-radius:50%}
+    .nav{display:flex;align-items:center;gap:18px;font-size:14px;font-weight:750}.nav a{color:var(--muted)}.nav a:hover{color:var(--ink)}.nav a[aria-current=page]{color:var(--ink);text-decoration:underline;text-decoration-color:var(--coral);text-decoration-thickness:3px;text-underline-offset:6px}
+    .toggle{position:relative;width:74px;height:39px;padding:0;border:0;border-radius:99px;cursor:pointer;background:transparent}.toggle:before{content:"";position:absolute;inset:6px 0 0;border-radius:inherit;background:var(--pink-base)}.toggle-top{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:4px 8px;border-radius:inherit;color:#28152b;background:var(--pink);transition:transform .12s}.knob{width:27px;height:27px;border-radius:50%;background:var(--cream);box-shadow:inset -3px -3px 0 rgba(100,61,0,.12);transition:transform .2s}[data-theme=night] .knob{transform:translateX(27px)}.toggle:active .toggle-top{transform:translateY(5px)}
+    :focus-visible{outline:4px solid var(--sky);outline-offset:4px}
+    .section{margin-top:46px}.heading{display:flex;align-items:end;justify-content:space-between;gap:24px;margin-bottom:22px}.heading h2{margin:0;font-family:Georgia,"Noto Serif SC",serif;font-size:28px;line-height:1.1}.heading p{max-width:560px;margin:0;color:var(--muted);font-size:13.5px;text-align:right}
+    .button{--cap:var(--coral);--base:var(--coral-base);position:relative;display:inline-grid;min-height:52px;place-items:center;padding:0 0 8px;border:0;border-radius:16px;cursor:pointer;background:var(--base);font-weight:850}.button>span{display:inline-flex;align-items:center;justify-content:center;gap:9px;width:100%;min-height:52px;padding:0 21px;border-radius:inherit;background:var(--cap);transform:translateY(-8px);transition:transform .11s,filter .15s}.button:hover>span{transform:translateY(-11px);filter:brightness(1.035) saturate(1.05)}.button:active>span{transform:translateY(-2px)}.button.cream{--cap:var(--cream);--base:var(--cream-base);color:#42220e}.button.mint{--cap:var(--mint);--base:var(--mint-base);color:#10392b}.button.small{min-height:42px;padding:0 0 7px;border-radius:13px;font-size:13px}.button.small>span{min-height:42px;padding:0 14px;transform:translateY(-7px)}.button.small:hover>span{transform:translateY(-9px)}.button.small:active>span{transform:translateY(-1px)}
+    footer{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:38px 4px 0;color:var(--muted);font-size:12px;font-weight:650}footer a{color:var(--muted)}footer a:hover{color:var(--ink)}
+    /* 统计页 */
+    .page-head h1{margin:10px 0 8px;font-family:Georgia,"Noto Serif SC",serif;font-size:clamp(34px,5vw,46px)}.page-head .sub{color:var(--muted);font-size:14px;font-weight:700}.page-head .sub b{color:var(--ink)}
+    .range{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:22px}
+    .chip{--chip-cap:var(--cream);--chip-base:var(--cream-base);padding:8px 14px;border:0;border-radius:999px;cursor:pointer;background:var(--chip-cap);box-shadow:0 5px 0 var(--chip-base);color:#432b1b;font-size:12.5px;font-weight:800;transform:translateY(-5px);transition:transform .11s,box-shadow .11s,filter .15s}.chip:hover{transform:translateY(-7px);box-shadow:0 7px 0 var(--chip-base);filter:brightness(1.03)}.chip:active{transform:translateY(-1px);box-shadow:0 1px 0 var(--chip-base)}.chip[aria-pressed=true]{--chip-cap:var(--pink);--chip-base:var(--pink-base);color:#341624}
+    .stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px}.stat{position:relative;overflow:hidden;min-height:138px;padding:19px;border:1px solid var(--line);border-radius:18px;background:var(--soft)}.stat:after{content:"";position:absolute;right:-20px;bottom:-24px;width:76px;height:76px;border-radius:50%;background:var(--mint);opacity:.38}.stat:nth-child(2):after{background:var(--coral)}.stat:nth-child(3):after{background:var(--cream)}.stat:nth-child(4):after{background:var(--sky)}.stat:nth-child(5):after{background:var(--pink)}.stat span,.stat small{display:block;position:relative;z-index:1}.stat span{font-family:Georgia,serif;font-size:33px;font-weight:800;line-height:1.1}.stat small{margin-top:11px;color:var(--muted);font-size:12.5px;font-weight:700}
+    .chart{padding:24px;border:1px solid var(--line);border-radius:22px;background:var(--surface)}
+    .chart h3{margin:0 0 6px;font-size:16px}.chart .desc{margin:0 0 18px;color:var(--muted);font-size:12.5px;font-weight:700}
+    .bars{display:grid;grid-template-columns:repeat(12,1fr);align-items:end;gap:10px;height:190px;padding:4px 2px 0}
+    .bar-col{display:flex;flex-direction:column;justify-content:flex-end;height:100%;gap:6px;text-align:center}
+    .bar{border-radius:8px 8px 4px 4px;background:var(--coral);min-height:6px;box-shadow:0 4px 0 var(--coral-base);transition:height .3s}
+    .bar.likes{background:var(--mint);box-shadow:0 4px 0 var(--mint-base)}
+    .bar-pair{display:grid;gap:3px}
+    .bar-label{color:var(--muted);font-size:10px;font-weight:800}
+    .legend{display:flex;gap:18px;margin-top:14px;color:var(--muted);font-size:11.5px;font-weight:750}.legend i{display:inline-block;width:11px;height:11px;border-radius:4px;margin-right:6px;vertical-align:-1px}.legend .l-views i{background:var(--coral)}.legend .l-likes i{background:var(--mint)}
+    .sr-table{position:absolute;left:-9999px}
+    .split{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+    .hbar-list{display:grid;gap:12px}.hbar{display:grid;grid-template-columns:110px 1fr 60px;gap:12px;align-items:center;font-size:12.5px}.hbar .name{color:var(--muted);font-weight:750;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hbar .track{height:18px;border-radius:99px;background:var(--soft);overflow:hidden}.hbar .fill{height:100%;border-radius:99px;background:var(--coral);box-shadow:inset 0 -4px 0 var(--coral-base)}.hbar:nth-child(2) .fill{background:var(--mint);box-shadow:inset 0 -4px 0 var(--mint-base)}.hbar:nth-child(3) .fill{background:var(--sky);box-shadow:inset 0 -4px 0 var(--sky-base)}.hbar:nth-child(4) .fill{background:var(--lilac);box-shadow:inset 0 -4px 0 var(--lilac-base)}.hbar:nth-child(5) .fill{background:var(--pink);box-shadow:inset 0 -4px 0 var(--pink-base)}.hbar .val{color:var(--muted);font-weight:800;text-align:right}
+    .rank-list{display:grid;gap:10px}.rank{display:grid;grid-template-columns:34px 1fr auto;gap:12px;align-items:center;padding:11px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}.rank .no{display:grid;place-items:center;width:34px;height:34px;border-radius:11px;background:var(--soft);color:var(--muted);font-weight:900;font-size:13px}.rank:nth-child(1) .no{background:var(--coral);color:#fff}.rank:nth-child(2) .no{background:var(--mint);color:#0d3826}.rank:nth-child(3) .no{background:var(--sky);color:#17354e}.rank b{font-size:13.5px;line-height:1.35}.rank small{display:block;color:var(--muted);font-size:11px;font-weight:750}.rank .val{color:var(--muted);font-size:12px;font-weight:800;text-align:right}
+    .note{margin-top:20px;padding:16px 18px;border:1px dashed var(--line);border-radius:16px;background:var(--soft);color:var(--muted);font-size:12px;line-height:1.7}.note b{color:var(--ink)}
+    @media(max-width:900px){.stats{grid-template-columns:repeat(3,1fr)}.split{grid-template-columns:1fr}}
+    @media(max-width:600px){.page{width:min(100% - 28px,1180px)}.header{padding-top:18px}.nav a{display:none}.heading{display:block}.heading p{text-align:left;margin-top:9px}.stats{grid-template-columns:repeat(2,1fr)}.bars{grid-template-columns:repeat(6,1fr);height:150px}.hbar{grid-template-columns:80px 1fr 48px}footer{display:block;line-height:1.7}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">跳到主内容</a>
+  <main class="page" id="main">
+    <header class="header">
+      <a class="brand" href="01-home.html"><span class="mark"><i></i></span>Playbook</a>
+      <nav class="nav" aria-label="主导航">
+        <a href="01-home.html">首页</a>
+        <a href="02-post-discovery.html">文章</a>
+        <a href="04-timeline-list.html">时间轴</a>
+        <a href="06-about.html">关于</a>
+        <a href="07-stats.html" aria-current="page">统计</a>
+        <button class="toggle" id="theme-toggle" type="button" aria-label="切换晚间主题" aria-pressed="false"><span class="toggle-top">☼<span class="knob"></span>☾</span></button>
+      </nav>
+    </header>
+
+    <div class="page-head">
+      <h1>站点统计</h1>
+      <p class="sub">数据来自每日聚合 · 最后聚合于 <b>2026.07.18 03:00</b> · 去重后有效浏览口径</p>
+      <div class="range" role="group" aria-label="时间范围">
+        <button class="chip" type="button" aria-pressed="true">近 30 天</button>
+        <button class="chip" type="button" aria-pressed="false">近 90 天</button>
+        <button class="chip" type="button" aria-pressed="false">近 1 年</button>
+        <button class="chip" type="button" aria-pressed="false">全部</button>
+      </div>
+    </div>
+
+    <section class="section" aria-label="核心指标">
+      <div class="stats">
+        <div class="stat"><span>12.8k</span><small>总有效浏览</small></div>
+        <div class="stat"><span>48</span><small>发布文章</small></div>
+        <div class="stat"><span>126</span><small>时间轴节点</small></div>
+        <div class="stat"><span>326</span><small>累计点赞</small></div>
+        <div class="stat"><span>94</span><small>公开评论</small></div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="trend-title">
+      <div class="heading"><h2 id="trend-title">趋势</h2><p>浏览与互动分列展示；数据不足时不绘制误导性趋势线。</p></div>
+      <div class="chart">
+        <h3>近 30 天浏览与点赞</h3>
+        <p class="desc">每根立柱为一个时段的聚合值；颜色区分指标，同时保留文字标签。</p>
+        <div class="bars" role="img" aria-label="近30天趋势柱状图：浏览峰值出现在7月17日主题发布日" id="bars"></div>
+        <div class="legend" aria-hidden="true"><span class="l-views"><i></i>有效浏览</span><span class="l-likes"><i></i>点赞</span></div>
+        <table class="sr-table">
+          <caption>近30天数据表（摘要）</caption>
+          <thead><tr><th>时段</th><th>浏览</th><th>点赞</th></tr></thead>
+          <tbody><tr><td>6/19–6/25</td><td>312</td><td>9</td></tr><tr><td>6/26–7/2</td><td>388</td><td>12</td></tr><tr><td>7/3–7/9</td><td>465</td><td>15</td></tr><tr><td>7/10–7/16</td><td>512</td><td>17</td></tr><tr><td>7/17–7/18</td><td>596</td><td>24</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="dist-title">
+      <div class="heading"><h2 id="dist-title">内容分布</h2><p>按标签与时间轴类型汇总，聚合数据生成，不扫描原始事件。</p></div>
+      <div class="split">
+        <div class="chart">
+          <h3>文章标签分布</h3>
+          <p class="desc">全部 48 篇文章的标签计数。</p>
+          <div class="hbar-list">
+            <div class="hbar"><span class="name">设计系统</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="val">12 篇</span></div>
+            <div class="hbar"><span class="name">前端</span><span class="track"><span class="fill" style="width:75%"></span></span><span class="val">9 篇</span></div>
+            <div class="hbar"><span class="name">生活</span><span class="track"><span class="fill" style="width:58%"></span></span><span class="val">7 篇</span></div>
+            <div class="hbar"><span class="name">实践笔记</span><span class="track"><span class="fill" style="width:50%"></span></span><span class="val">6 篇</span></div>
+            <div class="hbar"><span class="name">工具链</span><span class="track"><span class="fill" style="width:33%"></span></span><span class="val">4 篇</span></div>
+          </div>
+        </div>
+        <div class="chart">
+          <h3>时间轴类型分布</h3>
+          <p class="desc">全部 126 个节点的类型计数。</p>
+          <div class="hbar-list">
+            <div class="hbar"><span class="name">笔记</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="val">38</span></div>
+            <div class="hbar"><span class="name">项目</span><span class="track"><span class="fill" style="width:63%"></span></span><span class="val">24</span></div>
+            <div class="hbar"><span class="name">阅读</span><span class="track"><span class="fill" style="width:50%"></span></span><span class="val">19</span></div>
+            <div class="hbar"><span class="name">发布</span><span class="track"><span class="fill" style="width:42%"></span></span><span class="val">16</span></div>
+            <div class="hbar"><span class="name">出行</span><span class="track"><span class="fill" style="width:29%"></span></span><span class="val">11</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="pop-title">
+      <div class="heading"><h2 id="pop-title">热门内容</h2><p>按有效浏览排名；时间范围切换会同步影响此排行。</p></div>
+      <div class="split">
+        <div class="chart">
+          <h3>热门文章</h3>
+          <div class="rank-list">
+            <a class="rank" href="03-post-detail.html"><span class="no">1</span><span><b>我把个人网站做成了一台可玩的记录机</b><small>2026.07.17 · 设计系统</small></span><span class="val">1,284 浏览<br>128 ♥</span></a>
+            <a class="rank" href="03-post-detail.html"><span class="no">2</span><span><b>夜间主题不是把颜色调暗那么简单</b><small>2026.05.30 · 设计系统</small></span><span class="val">976 浏览<br>94 ♥</span></a>
+            <a class="rank" href="03-post-detail.html"><span class="no">3</span><span><b>给个人站接上 Supabase：一次数据层的实践笔记</b><small>2026.06.15 · 前端</small></span><span class="val">841 浏览<br>67 ♥</span></a>
+          </div>
+        </div>
+        <div class="chart">
+          <h3>热门时间轴</h3>
+          <div class="rank-list">
+            <a class="rank" href="05-timeline-detail.html"><span class="no">1</span><span><b>主题样式库建立</b><small>RELEASE · 2026.07.17</small></span><span class="val">342 浏览<br>24 ♥</span></a>
+            <a class="rank" href="05-timeline-detail.html"><span class="no">2</span><span><b>舟山群岛两日</b><small>TRAVEL · 2026.07.05</small></span><span class="val">288 浏览<br>32 ♥</span></a>
+            <a class="rank" href="05-timeline-detail.html"><span class="no">3</span><span><b>累计有效浏览突破 10,000</b><small>MILESTONE · 2026.06.15</small></span><span class="val">215 浏览<br>21 ♥</span></a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="metric-title">
+      <div class="heading"><h2 id="metric-title">指标说明</h2></div>
+      <div class="note">
+        <b>口径</b>：浏览为按访客与时间窗去重后的有效事件；点赞为当前有效数；公开评论仅统计已通过审核的评论。<br>
+        <b>更新频率</b>：每日 03:00 聚合一次，展示结果可能有最长 1 小时延迟。<br>
+        <b>隐私</b>：本页仅展示聚合数据，不包含任何访客标识、IP 或单用户轨迹。
+      </div>
+    </section>
+
+    <footer>
+      <span>© 2026 Playbook · 用心按下每一次更新</span>
+      <span><a href="01-home.html">首页</a> · <a href="index.html">Demo 索引</a></span>
+    </footer>
+  </main>
+  <script>
+    const root=document.documentElement;
+    const toggle=document.getElementById('theme-toggle');
+    const saved=localStorage.getItem('playbook-theme');
+    const initial=saved||(matchMedia('(prefers-color-scheme: dark)').matches?'night':'light');
+    function setTheme(theme){root.dataset.theme=theme;if(toggle){toggle.setAttribute('aria-pressed',String(theme==='night'));toggle.setAttribute('aria-label',theme==='night'?'切换日间主题':'切换晚间主题')}localStorage.setItem('playbook-theme',theme)}
+    setTheme(initial);
+    if(toggle)toggle.addEventListener('click',()=>setTheme(root.dataset.theme==='night'?'light':'night'));
+    // 生成12列趋势柱
+    const bars=document.getElementById('bars');
+    const data=[[34,3],[41,5],[38,4],[52,6],[47,4],[61,8],[55,5],[72,9],[66,7],[84,11],[95,14],[118,24]];
+    const labels=['6/19','6/21','6/23','6/25','6/27','6/29','7/1','7/3','7/5','7/9','7/13','7/17'];
+    const maxV=Math.max(...data.map(d=>d[0]));
+    bars.innerHTML=data.map((d,i)=>{
+      const h=Math.round(d[0]/maxV*100),lh=Math.round(d[1]/maxV*100);
+      return '<div class="bar-col"><div class="bar-pair"><div class="bar" style="height:'+h+'px" title="'+labels[i]+' 浏览 '+d[0]+'"></div><div class="bar likes" style="height:'+Math.max(lh,3)+'px" title="'+labels[i]+' 点赞 '+d[1]+'"></div></div><span class="bar-label">'+labels[i]+'</span></div>';
+    }).join('');
+    // 时间范围切换
+    const rangeChips=[...document.querySelectorAll('.range .chip')];
+    rangeChips.forEach(chip=>chip.addEventListener('click',()=>{
+      rangeChips.forEach(c=>c.setAttribute('aria-pressed','false'));
+      chip.setAttribute('aria-pressed','true');
+    }));
+  </script>
+</body>
+</html>

@@ -1,0 +1,1284 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>myweb — 视觉风格 Demo</title>
+<style>
+/* =============================================
+   CSS Custom Properties — Design Tokens
+   ============================================= */
+
+:root {
+  /* Light theme */
+  --color-bg: #fff8ef;
+  --color-bg-alt: #fff0e0;
+  --color-grid: rgba(80, 48, 32, 0.06);
+  --color-text: #15100d;
+  --color-text-muted: #6b5e55;
+  --color-primary: #ff6268;
+  --color-primary-top: #ff6268;
+  --color-primary-base: #760030;
+  --color-secondary: #f58ac0;
+  --color-secondary-top: #f58ac0;
+  --color-secondary-base: #a0009b;
+  --color-cream: #ffe7c7;
+  --color-cream-base: #c49a3c;
+  --color-mint: #8de6c2;
+  --color-mint-base: #1a6b4a;
+  --color-sky: #8fd3ff;
+  --color-sky-base: #1565a0;
+  --color-berry: #b06fff;
+  --color-berry-base: #3d1a7a;
+  --color-card-bg: #ffffff;
+  --color-card-border: rgba(118, 0, 48, 0.12);
+  --color-stat-bg: #fff0e6;
+  --color-stat-accent: #ffe0d0;
+  --color-input-bg: #ffffff;
+  --color-input-border: rgba(118, 0, 48, 0.2);
+  --color-shell: rgba(255, 182, 150, 0.35);
+  --radius-card: 28px;
+  --radius-button: 18px;
+  --radius-sm: 12px;
+  --radius-xs: 8px;
+  --button-depth: 14px;
+  --button-depth-sm: 8px;
+  --font-display: 'Georgia', 'Noto Serif SC', serif;
+  --font-body: system-ui, -apple-system, 'Segoe UI', 'Noto Sans SC', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --shadow-card: 0 12px 0 rgba(118, 0, 48, 0.12), 0 4px 20px rgba(0,0,0,0.04);
+  --shadow-card-hover: 0 16px 0 rgba(118, 0, 48, 0.14), 0 6px 28px rgba(0,0,0,0.06);
+  --transition-press: 100ms cubic-bezier(0.2, 0, 0, 1);
+  --transition-hover: 150ms ease;
+}
+
+[data-theme="night"] {
+  --color-bg: #21162f;
+  --color-bg-alt: #2a1c3a;
+  --color-grid: rgba(255, 231, 199, 0.08);
+  --color-text: #fff8ef;
+  --color-text-muted: #b8a8c8;
+  --color-primary: #ff6b7a;
+  --color-primary-top: #ff6b7a;
+  --color-primary-base: #4b0829;
+  --color-secondary: #c08fff;
+  --color-secondary-top: #c08fff;
+  --color-secondary-base: #3d1a7a;
+  --color-cream: #ffe0a8;
+  --color-cream-base: #8b6914;
+  --color-mint: #78e0c1;
+  --color-mint-base: #0d4a32;
+  --color-sky: #79c9ff;
+  --color-sky-base: #0d3b6e;
+  --color-berry: #b08fff;
+  --color-berry-base: #2a1058;
+  --color-card-bg: #2d1f3d;
+  --color-card-border: rgba(255, 107, 122, 0.15);
+  --color-stat-bg: #2d1f3d;
+  --color-stat-accent: #3a284d;
+  --color-input-bg: #2d1f3d;
+  --color-input-border: rgba(255, 107, 122, 0.25);
+  --color-shell: rgba(255, 107, 122, 0.12);
+  --shadow-card: 0 12px 0 rgba(75, 8, 41, 0.3), 0 4px 20px rgba(0,0,0,0.15);
+  --shadow-card-hover: 0 16px 0 rgba(75, 8, 41, 0.35), 0 6px 28px rgba(0,0,0,0.2);
+}
+
+/* =============================================
+   Reset & Base
+   ============================================= */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.6;
+  min-height: 100vh;
+  transition: background 0.3s ease, color 0.3s ease;
+  overflow-x: hidden;
+}
+
+/* =============================================
+   Decorative Background
+   ============================================= */
+
+.decorative-bg {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.decorative-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--color-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-grid) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* floating dots */
+.dot {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0.25;
+  animation: float 6s ease-in-out infinite;
+}
+.dot--pink  { background: var(--color-secondary); width: 18px; height: 18px; }
+.dot--mint  { background: var(--color-mint);     width: 14px; height: 14px; }
+.dot--sky   { background: var(--color-sky);      width: 22px; height: 22px; }
+.dot--cream { background: var(--color-cream);    width: 16px; height: 16px; }
+
+.dot--1 { top: 8%;  left: 5%;  animation-delay: 0s; }
+.dot--2 { top: 15%; right: 8%; animation-delay: 1.5s; }
+.dot--3 { top: 55%; left: 3%;  animation-delay: 3s; }
+.dot--4 { top: 70%; right: 5%; animation-delay: 4.5s; }
+.dot--5 { top: 30%; left: 92%; animation-delay: 2s; }
+.dot--6 { top: 85%; left: 88%;  animation-delay: 0.8s; }
+
+/* squiggles / stars */
+.star {
+  position: absolute;
+  font-size: 28px;
+  opacity: 0.3;
+  animation: float 8s ease-in-out infinite;
+}
+.star--1 { top: 12%; left: 15%; animation-delay: 1s; }
+.star--2 { top: 45%; right: 10%; animation-delay: 3.5s; }
+.star--3 { top: 78%; left: 12%; animation-delay: 5s; }
+
+/* wave at bottom */
+.wave {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 120px;
+  opacity: 0.06;
+}
+.wave svg { width: 100%; height: 100%; }
+
+@keyframes float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-12px) rotate(3deg); }
+}
+
+/* =============================================
+   Layout
+   ============================================= */
+
+.page {
+  position: relative;
+  z-index: 1;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 24px 80px;
+}
+
+/* =============================================
+   Theme Toggle
+   ============================================= */
+
+.theme-bar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 0 16px;
+}
+
+.theme-toggle {
+  position: relative;
+  width: 72px;
+  height: 40px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 40px;
+  padding: 0;
+}
+
+.theme-toggle__base {
+  position: absolute;
+  inset: 6px 0 0 0;
+  border-radius: 40px;
+  background: var(--color-primary-base);
+  transition: background var(--transition-hover);
+}
+
+.theme-toggle__top {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 34px;
+  padding: 0 6px;
+  border-radius: 40px;
+  background: var(--color-cream);
+  transform: translateY(0);
+  transition: transform var(--transition-press), background var(--transition-hover);
+}
+
+.theme-toggle__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: transform 0.3s ease, background var(--transition-hover);
+}
+
+[data-theme="night"] .theme-toggle__icon {
+  transform: translateX(30px);
+  background: var(--color-sky);
+}
+
+.theme-toggle:hover .theme-toggle__top {
+  transform: translateY(-2px);
+}
+
+.theme-toggle:active .theme-toggle__top {
+  transform: translateY(4px);
+}
+
+.theme-toggle:focus-visible {
+  outline: 4px solid var(--color-text);
+  outline-offset: 4px;
+  border-radius: 40px;
+}
+
+/* =============================================
+   Toy Button — core component
+   ============================================= */
+
+.toy-button {
+  --btn-depth: var(--button-depth);
+  --btn-radius: var(--radius-button);
+  --btn-color-top: var(--color-primary);
+  --btn-color-base: var(--color-primary-base);
+  --btn-overlap: 4px;
+  --btn-base-offset: 2px;
+  --btn-shell-offset: 5px;
+
+  position: relative;
+  display: inline-block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-weight: 800;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  outline: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 托盘/外壳 — 在最后面，比底座宽一圈 */
+.toy-button::before {
+  content: '';
+  position: absolute;
+  bottom: calc(-1 * (var(--btn-depth) - var(--btn-overlap) + 2px));
+  left: calc(-1 * var(--btn-shell-offset));
+  right: calc(-1 * var(--btn-shell-offset));
+  height: calc(var(--btn-depth) + 6px);
+  border-radius: calc(var(--btn-radius) + var(--btn-shell-offset));
+  background: var(--color-shell);
+  z-index: 0;
+  transition: height var(--transition-press), bottom var(--transition-press);
+}
+
+/* 顶部色块 — 在最前面 */
+.toy-button__top {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 56px;
+  padding: 0 28px;
+  border-radius: var(--btn-radius);
+  background: var(--btn-color-top);
+  color: #fff;
+  transform: translateY(0);
+  transition: transform var(--transition-press), filter var(--transition-hover);
+  z-index: 2;
+}
+
+/* 底座 — 在中间，向上伸入顶部色块覆盖圆角 */
+.toy-button__base {
+  position: absolute;
+  bottom: calc(-1 * (var(--btn-depth) - var(--btn-overlap)));
+  left: calc(-1 * var(--btn-base-offset));
+  right: calc(-1 * var(--btn-base-offset));
+  height: var(--btn-depth);
+  border-radius: 0 0 calc(var(--btn-radius) + var(--btn-base-offset)) calc(var(--btn-radius) + var(--btn-base-offset));
+  background: var(--btn-color-base);
+  z-index: 1;
+  transition: height var(--transition-press), background var(--transition-hover);
+}
+
+.toy-button:hover .toy-button__top {
+  transform: translateY(-2px);
+  filter: brightness(1.06);
+}
+
+/* 按压：顶部下移，底座从顶部收缩（底部不动） */
+.toy-button:active .toy-button__top {
+  transform: translateY(calc(var(--btn-depth) - var(--btn-overlap) - 3px));
+}
+
+.toy-button:active .toy-button__base {
+  height: 3px;
+}
+
+.toy-button:active::before {
+  height: calc(3px + 10px);
+}
+
+.toy-button:focus-visible {
+  outline: 4px solid var(--color-text);
+  outline-offset: 4px;
+}
+
+.toy-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.toy-button:disabled .toy-button__top {
+  transform: translateY(0);
+  filter: grayscale(0.4);
+}
+
+/* Variants */
+.toy-button--secondary {
+  --btn-color-top: var(--color-secondary);
+  --btn-color-base: var(--color-secondary-base);
+}
+.toy-button--mint {
+  --btn-color-top: var(--color-mint);
+  --btn-color-base: var(--color-mint-base);
+}
+.toy-button--cream {
+  --btn-color-top: var(--color-cream);
+  --btn-color-base: var(--color-cream-base);
+}
+.toy-button--sky {
+  --btn-color-top: var(--color-sky);
+  --btn-color-base: var(--color-sky-base);
+}
+.toy-button--berry {
+  --btn-color-top: var(--color-berry);
+  --btn-color-base: var(--color-berry-base);
+}
+
+.toy-button--cream .toy-button__top { color: #15100d; }
+.toy-button--sky .toy-button__top   { color: #15100d; }
+.toy-button--mint .toy-button__top  { color: #15100d; }
+
+/* Sizes */
+.toy-button--sm {
+  --btn-depth: var(--button-depth-sm);
+  --btn-overlap: 3px;
+  --btn-base-offset: 1px;
+  --btn-shell-offset: 4px;
+  font-size: 0.875rem;
+}
+.toy-button--sm .toy-button__top {
+  min-height: 44px;
+  padding: 0 18px;
+}
+
+.toy-button--lg {
+  --btn-depth: 20px;
+  --btn-overlap: 5px;
+  --btn-base-offset: 3px;
+  --btn-shell-offset: 7px;
+  font-size: 1.25rem;
+  --btn-radius: 24px;
+}
+.toy-button--lg .toy-button__top {
+  min-height: 80px;
+  padding: 0 40px;
+}
+
+/* =============================================
+   Toy Card
+   ============================================= */
+
+.toy-card {
+  position: relative;
+  background: var(--color-card-bg);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  transition: transform var(--transition-hover), box-shadow var(--transition-hover);
+  overflow: hidden;
+  border: 2px solid var(--color-card-border);
+}
+
+.toy-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.toy-card:active {
+  transform: translateY(2px);
+  box-shadow: 0 4px 0 rgba(118, 0, 48, 0.08);
+}
+
+.toy-card__body {
+  padding: 24px;
+}
+
+.toy-card__image {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  background: linear-gradient(135deg, var(--color-secondary), var(--color-sky));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3rem;
+}
+
+/* =============================================
+   Stat Block
+   ============================================= */
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+}
+
+.stat-block {
+  position: relative;
+  background: var(--color-stat-bg);
+  border-radius: var(--radius-card);
+  padding: 20px 16px;
+  text-align: center;
+  box-shadow: 0 8px 0 var(--color-stat-accent), 0 3px 12px rgba(0,0,0,0.04);
+  transition: transform var(--transition-hover);
+}
+
+.stat-block:hover {
+  transform: translateY(-2px);
+}
+
+.stat-block__value {
+  font-size: 2.5rem;
+  font-weight: 900;
+  font-family: var(--font-display);
+  color: var(--color-primary);
+  line-height: 1.1;
+}
+
+.stat-block__label {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+.stat-block__icon {
+  font-size: 1.5rem;
+  margin-bottom: 4px;
+}
+
+/* =============================================
+   Tag Chip
+   ============================================= */
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 14px;
+  border-radius: 100px;
+  background: var(--color-secondary);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 3px 0 var(--color-secondary-base);
+  transition: transform var(--transition-press);
+}
+
+.tag-chip:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--color-secondary-base);
+}
+
+/* =============================================
+   Hero Section
+   ============================================= */
+
+.hero {
+  text-align: center;
+  padding: 60px 0 48px;
+  position: relative;
+}
+
+.hero__avatar {
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--color-sky), var(--color-primary));
+  margin: 0 auto 20px;
+  display: grid;
+  place-items: center;
+  font-size: 2.5rem;
+  box-shadow: 0 8px 0 var(--color-sky-base), 0 4px 16px rgba(0,0,0,0.08);
+}
+
+.hero__title {
+  font-family: var(--font-display);
+  font-size: 2.5rem;
+  font-weight: 900;
+  line-height: 1.2;
+  margin-bottom: 8px;
+}
+
+.hero__subtitle {
+  font-size: 1.1rem;
+  color: var(--color-text-muted);
+  max-width: 480px;
+  margin: 0 auto 24px;
+  line-height: 1.7;
+}
+
+.hero__actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.hero__social {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.social-dot {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--color-card-bg);
+  border: 2px solid var(--color-card-border);
+  display: grid;
+  place-items: center;
+  font-size: 1.1rem;
+  cursor: pointer;
+  transition: transform var(--transition-hover);
+  box-shadow: 0 4px 0 var(--color-card-border);
+  text-decoration: none;
+  color: var(--color-text);
+}
+
+.social-dot:hover {
+  transform: translateY(-2px);
+}
+
+.social-dot:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--color-card-border);
+}
+
+/* =============================================
+   Quick Link Bar
+   ============================================= */
+
+.quick-links {
+  padding: 32px 0;
+}
+
+.quick-links__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+}
+
+/* =============================================
+   Section Headers
+   ============================================= */
+
+.section {
+  padding: 48px 0;
+}
+
+.section__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.section__icon {
+  font-size: 1.8rem;
+}
+
+.section__title {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 900;
+}
+
+/* =============================================
+   Post Grid
+   ============================================= */
+
+.post-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 24px;
+}
+
+.post-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.post-card__title {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1.4;
+  margin: 8px 0 4px;
+}
+
+.post-card__summary {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
+.post-card__date {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+/* =============================================
+   Timeline
+   ============================================= */
+
+.timeline {
+  position: relative;
+  padding-left: 32px;
+}
+
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 12px;
+  top: 8px;
+  bottom: 8px;
+  width: 8px;
+  border-radius: 8px;
+  background: var(--color-secondary);
+  box-shadow: 0 4px 0 var(--color-secondary-base);
+}
+
+.timeline-item {
+  position: relative;
+  margin-bottom: 24px;
+}
+
+.timeline-item__dot {
+  position: absolute;
+  left: -28px;
+  top: 16px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: 0 3px 0 var(--color-primary-base);
+  z-index: 1;
+}
+
+.timeline-item__card {
+  margin-left: 0;
+}
+
+.timeline-item__date {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.timeline-item__type {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 100px;
+  background: var(--color-mint);
+  color: #15100d;
+  font-size: 0.7rem;
+  font-weight: 800;
+  margin-bottom: 6px;
+  box-shadow: 0 3px 0 var(--color-mint-base);
+}
+
+.timeline-item__content {
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+/* =============================================
+   Comment Form
+   ============================================= */
+
+.comment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 520px;
+}
+
+.comment-form__input {
+  padding: 14px 18px;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--color-input-border);
+  background: var(--color-input-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color var(--transition-hover);
+}
+
+.comment-form__input:focus {
+  border-color: var(--color-primary);
+}
+
+.comment-form__textarea {
+  min-height: 100px;
+  resize: vertical;
+  padding: 14px 18px;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--color-input-border);
+  background: var(--color-input-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color var(--transition-hover);
+}
+
+.comment-form__textarea:focus {
+  border-color: var(--color-primary);
+}
+
+/* =============================================
+   Like Button
+   ============================================= */
+
+.like-btn .toy-button__top {
+  color: var(--color-primary);
+}
+
+/* =============================================
+   Activity Feed
+   ============================================= */
+
+.activity-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.activity-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--color-card-bg);
+  border-radius: var(--radius-xs);
+  border: 2px solid var(--color-card-border);
+  font-size: 0.9rem;
+  box-shadow: 0 4px 0 var(--color-card-border);
+}
+
+.activity-item__icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.activity-item__text {
+  color: var(--color-text-muted);
+}
+
+.activity-item__time {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+/* =============================================
+   Responsive
+   ============================================= */
+
+@media (max-width: 768px) {
+  .hero {
+    padding: 40px 0 32px;
+  }
+  .hero__title {
+    font-size: 1.8rem;
+  }
+  .post-grid {
+    grid-template-columns: 1fr;
+  }
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .quick-links__grid {
+    gap: 8px;
+  }
+  .toy-button--lg {
+    min-height: 64px;
+    font-size: 1.1rem;
+  }
+  .toy-button--lg .toy-button__top {
+    min-height: 64px;
+    padding: 0 28px;
+  }
+}
+
+@media (max-width: 480px) {
+  .page {
+    padding: 16px 16px 60px;
+  }
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+  .stat-block__value {
+    font-size: 1.8rem;
+  }
+}
+
+/* =============================================
+   Reduced Motion
+   ============================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .dot, .star {
+    animation: none;
+  }
+}
+
+/* =============================================
+   Demo note
+   ============================================= */
+
+.demo-badge {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 100;
+  padding: 6px 16px;
+  border-radius: 100px;
+  background: var(--color-berry);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  box-shadow: 0 4px 0 var(--color-berry-base);
+}
+</style>
+</head>
+<body>
+
+<!-- Decorative background -->
+<div class="decorative-bg">
+  <div class="dot dot--pink dot--1"></div>
+  <div class="dot dot--mint dot--2"></div>
+  <div class="dot dot--sky dot--3"></div>
+  <div class="dot dot--cream dot--4"></div>
+  <div class="dot dot--pink dot--5"></div>
+  <div class="dot dot--mint dot--6"></div>
+  <div class="star star--1">✦</div>
+  <div class="star star--2">✧</div>
+  <div class="star star--3">✦</div>
+  <div class="wave">
+    <svg viewBox="0 0 1440 120" preserveAspectRatio="none">
+      <path d="M0,60 C240,120 480,0 720,60 C960,120 1200,0 1440,60 L1440,120 L0,120 Z" fill="var(--color-primary)"/>
+    </svg>
+  </div>
+</div>
+
+<div class="demo-badge">VISUAL DEMO</div>
+
+<div class="page">
+
+  <!-- Theme Toggle -->
+  <div class="theme-bar">
+    <button class="theme-toggle" id="themeToggle" aria-label="切换主题">
+      <span class="theme-toggle__base"></span>
+      <span class="theme-toggle__top">
+        <span class="theme-toggle__icon">☀️</span>
+        <span class="theme-toggle__icon">🌙</span>
+      </span>
+    </button>
+  </div>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero__avatar">🐣</div>
+    <h1 class="hero__title">你好，这是我的<br>数字玩具盒</h1>
+    <p class="hero__subtitle">
+      一个扁平卡通矢量风格的个人网站 —— 写文章、记录时间轴、与访客互动，一切都在这个明亮的小世界里。
+    </p>
+    <div class="hero__actions">
+      <button class="toy-button toy-button--lg">
+        <span class="toy-button__base"></span>
+        <span class="toy-button__top">📖 阅读文章</span>
+      </button>
+      <button class="toy-button toy-button--lg toy-button--secondary">
+        <span class="toy-button__base"></span>
+        <span class="toy-button__top">🕐 时间轴</span>
+      </button>
+    </div>
+    <div class="hero__social">
+      <a class="social-dot" href="#" title="GitHub">🐙</a>
+      <a class="social-dot" href="#" title="Twitter">🐦</a>
+      <a class="social-dot" href="#" title="Email">✉️</a>
+      <a class="social-dot" href="#" title="RSS">📡</a>
+    </div>
+  </section>
+
+  <!-- Quick Links -->
+  <section class="quick-links">
+    <div class="quick-links__grid">
+      <button class="toy-button toy-button--sm">
+        <span class="toy-button__base"></span>
+        <span class="toy-button__top">📝 文章</span>
+      </button>
+      <button class="toy-button toy-button--sm toy-button--cream">
+        <span class="toy-button__base"></span>
+        <span class="toy-button__top">🕐 时间轴</span>
+      </button>
+      <button class="toy-button toy-button--sm toy-button--mint">
+        <span class="toy-button__base"></span>
+        <span class="toy-button__top">🙋 关于我</span>
+      </button>
+      <button class="toy-button toy-button--sm toy-button--sky">
+        <span class="toy-button__base"></span>
+        <span class="toy-button__top">📊 统计</span>
+      </button>
+      <button class="toy-button toy-button--sm toy-button--berry">
+        <span class="toy-button__base"></span>
+        <span class="toy-button__top">🐙 GitHub</span>
+      </button>
+      <button class="toy-button toy-button--sm toy-button--secondary">
+        <span class="toy-button__base"></span>
+        <span class="toy-button__top">📡 RSS</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- Stats -->
+  <section class="section">
+    <div class="section__header">
+      <span class="section__icon">📊</span>
+      <h2 class="section__title">站点统计</h2>
+    </div>
+    <div class="stat-grid">
+      <div class="stat-block">
+        <div class="stat-block__icon">👀</div>
+        <div class="stat-block__value">12.4k</div>
+        <div class="stat-block__label">总浏览量</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-block__icon">📝</div>
+        <div class="stat-block__value">24</div>
+        <div class="stat-block__label">文章数</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-block__icon">🕐</div>
+        <div class="stat-block__value">86</div>
+        <div class="stat-block__label">时间轴节点</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-block__icon">❤️</div>
+        <div class="stat-block__value">1.2k</div>
+        <div class="stat-block__label">点赞数</div>
+      </div>
+      <div class="stat-block">
+        <div class="stat-block__icon">💬</div>
+        <div class="stat-block__value">348</div>
+        <div class="stat-block__label">评论数</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Recent Posts -->
+  <section class="section">
+    <div class="section__header">
+      <span class="section__icon">📝</span>
+      <h2 class="section__title">最近文章</h2>
+    </div>
+    <div class="post-grid">
+      <article class="toy-card">
+        <div class="toy-card__image">🎨</div>
+        <div class="toy-card__body">
+          <div class="post-card__meta">
+            <span class="tag-chip">Web</span>
+            <span class="tag-chip">Design</span>
+          </div>
+          <h3 class="post-card__title">构建一个扁平卡通风格的个人网站</h3>
+          <p class="post-card__summary">从设计 token 到组件实现，记录如何用 CSS 打造出玩具盒般的视觉体验。</p>
+          <span class="post-card__date">2026-08-15</span>
+        </div>
+      </article>
+
+      <article class="toy-card">
+        <div class="toy-card__image">💻</div>
+        <div class="toy-card__body">
+          <div class="post-card__meta">
+            <span class="tag-chip">Tech</span>
+            <span class="tag-chip">Next.js</span>
+          </div>
+          <h3 class="post-card__title">Next.js App Router 实战笔记</h3>
+          <p class="post-card__summary">Server Components、Server Actions、ISR — 用 App Router 构建内容站的最佳实践。</p>
+          <span class="post-card__date">2026-08-08</span>
+        </div>
+      </article>
+
+      <article class="toy-card">
+        <div class="toy-card__image">🌟</div>
+        <div class="toy-card__body">
+          <div class="post-card__meta">
+            <span class="tag-chip">Life</span>
+            <span class="tag-chip">Build</span>
+          </div>
+          <h3 class="post-card__title">为什么要做个人网站</h3>
+          <p class="post-card__summary">在算法推荐的时代，拥有一个属于自己的数字空间比以往任何时候都重要。</p>
+          <span class="post-card__date">2026-07-28</span>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- Timeline -->
+  <section class="section">
+    <div class="section__header">
+      <span class="section__icon">🕐</span>
+      <h2 class="section__title">最近时间轴</h2>
+    </div>
+    <div class="timeline">
+      <div class="timeline-item">
+        <div class="timeline-item__dot"></div>
+        <div class="timeline-item__card toy-card">
+          <div class="toy-card__body">
+            <div class="timeline-item__date">2026-08-20</div>
+            <span class="timeline-item__type">Milestone</span>
+            <p class="timeline-item__content">完成个人网站视觉风格 Demo，确认按钮、卡片和色彩方案方向。</p>
+          </div>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-item__dot"></div>
+        <div class="timeline-item__card toy-card">
+          <div class="toy-card__body">
+            <div class="timeline-item__date">2026-08-12</div>
+            <span class="timeline-item__type">Reading</span>
+            <p class="timeline-item__content">读完《Designing for Emotion》—— 界面设计不只是功能，更是情感连接。</p>
+          </div>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-item__dot"></div>
+        <div class="timeline-item__card toy-card">
+          <div class="toy-card__body">
+            <div class="timeline-item__date">2026-08-05</div>
+            <span class="timeline-item__type">Project</span>
+            <p class="timeline-item__content">开始搭建个人网站项目，技术栈确定为 Next.js + Supabase + Tailwind CSS。</p>
+          </div>
+        </div>
+      </div>
+      <div class="timeline-item">
+        <div class="timeline-item__dot"></div>
+        <div class="timeline-item__card toy-card">
+          <div class="toy-card__body">
+            <div class="timeline-item__date">2026-07-20</div>
+            <span class="timeline-item__type">Note</span>
+            <p class="timeline-item__content">网站视觉方向确定为扁平卡通矢量风格，参考了一些玩具包装和卡通插画的配色。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Interaction Demo -->
+  <section class="section">
+    <div class="section__header">
+      <span class="section__icon">💬</span>
+      <h2 class="section__title">互动组件</h2>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; margin-bottom: 24px;">
+      <button class="toy-button toy-button--sm like-btn">
+        <span class="toy-button__base"></span>
+        <span class="toy-button__top">❤️ 点赞 42</span>
+      </button>
+      <button class="toy-button toy-button--sm toy-button--mint">
+        <span class="toy-button__base"></span>
+        <span class="toy-button__top">💬 评论</span>
+      </button>
+      <button class="toy-button toy-button--sm" disabled>
+        <span class="toy-button__base"></span>
+        <span class="toy-button__top">🔒 已禁用</span>
+      </button>
+    </div>
+
+    <div class="comment-form">
+      <input class="comment-form__input" type="text" placeholder="你的昵称" value="访客小明">
+      <textarea class="comment-form__textarea" placeholder="写点什么吧..."></textarea>
+      <div>
+        <button class="toy-button toy-button--sm">
+          <span class="toy-button__base"></span>
+          <span class="toy-button__top">✉️ 提交评论</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Activity Feed -->
+  <section class="section">
+    <div class="section__header">
+      <span class="section__icon">📡</span>
+      <h2 class="section__title">最近活跃</h2>
+    </div>
+    <div class="activity-feed">
+      <div class="activity-item">
+        <span class="activity-item__icon">📝</span>
+        <span class="activity-item__text">发布了新文章</span>
+        <span class="activity-item__time">2 小时前</span>
+      </div>
+      <div class="activity-item">
+        <span class="activity-item__icon">❤️</span>
+        <span class="activity-item__text">有人给「构建扁平卡通风格网站」点赞</span>
+        <span class="activity-item__time">3 小时前</span>
+      </div>
+      <div class="activity-item">
+        <span class="activity-item__icon">💬</span>
+        <span class="activity-item__text">新评论待审核</span>
+        <span class="activity-item__time">5 小时前</span>
+      </div>
+      <div class="activity-item">
+        <span class="activity-item__icon">🕐</span>
+        <span class="activity-item__text">添加了时间轴节点</span>
+        <span class="activity-item__time">昨天</span>
+      </div>
+      <div class="activity-item">
+        <span class="activity-item__icon">👀</span>
+        <span class="activity-item__text">浏览量突破 10k</span>
+        <span class="activity-item__time">昨天</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Button Variants Showcase -->
+  <section class="section">
+    <div class="section__header">
+      <span class="section__icon">🎨</span>
+      <h2 class="section__title">按钮色板</h2>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
+      <button class="toy-button toy-button--sm">
+        <span class="toy-button__base"></span>
+        <span class="toy-button__top">珊瑚红</span>
+      </button>
+      <button class="toy-button toy-button--sm toy-button--secondary">
+        <span class="toy-button__base"></span>
+        <span class="toy-button__top">泡泡粉</span>
+      </button>
+      <button class="toy-button toy-button--sm toy-button--cream">
+        <span class="toy-button__base"></span>
+        <span class="toy-button__top">奶油黄</span>
+      </button>
+      <button class="toy-button toy-button--sm toy-button--mint">
+        <span class="toy-button__base"></span>
+        <span class="toy-button__top">薄荷绿</span>
+      </button>
+      <button class="toy-button toy-button--sm toy-button--sky">
+        <span class="toy-button__base"></span>
+        <span class="toy-button__top">天空蓝</span>
+      </button>
+      <button class="toy-button toy-button--sm toy-button--berry">
+        <span class="toy-button__base"></span>
+        <span class="toy-button__top">深莓紫</span>
+      </button>
+    </div>
+  </section>
+
+</div>
+
+<script>
+/* Theme toggle */
+const html = document.documentElement;
+const toggle = document.getElementById('themeToggle');
+
+function setTheme(theme) {
+  html.setAttribute('data-theme', theme);
+  localStorage.setItem('theme', theme);
+  updateToggleIcons(theme);
+}
+
+function updateToggleIcons(theme) {
+  const icons = toggle.querySelectorAll('.theme-toggle__icon');
+  if (icons.length >= 2) {
+    icons[0].textContent = theme === 'light' ? '☀️' : '☀️';
+    icons[1].textContent = theme === 'night' ? '🌙' : '🌙';
+  }
+}
+
+// Init: localStorage > system preference > light
+const saved = localStorage.getItem('theme');
+if (saved) {
+  setTheme(saved);
+} else {
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  setTheme(prefersDark ? 'night' : 'light');
+}
+
+toggle.addEventListener('click', () => {
+  const current = html.getAttribute('data-theme');
+  setTheme(current === 'light' ? 'night' : 'light');
+});
+
+// Listen for system changes when no manual preference
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+  if (!localStorage.getItem('theme')) {
+    setTheme(e.matches ? 'night' : 'light');
+  }
+});
+</script>
+
+</body>
+</html>
