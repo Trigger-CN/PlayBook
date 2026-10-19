@@ -20,8 +20,8 @@ function subscribe(onChange: () => void) {
 
 /**
  * 卡通主题开关（技术架构 12.2 / 决策 D-08）。
- * 服务端已通过 cookie 输出正确的 data-theme，这里只负责切换与回写 cookie，
- * 因此首屏不会出现主题闪烁，也不需要阻塞渲染的内联脚本。
+ * 根布局保持静态输出 data-theme="light"，由 head 内联脚本在首屏前按 cookie 校正；
+ * 这里只负责切换 DOM 上的 data-theme 并回写 cookie，两者共用同一个 cookie 名。
  */
 export function ThemeToggle() {
   const theme = useSyncExternalStore<Theme>(

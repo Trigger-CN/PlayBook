@@ -278,6 +278,112 @@
   }
 
   /* --------------------------------------------------------------
+   * StatBlock —— 数据块：柔和底、圆角、右下角彩色装饰圆。
+   * 强调色由 --stat-accent 提供，避免依赖元素顺序。
+   * -------------------------------------------------------------- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .stat {
+    --stat-accent: var(--mint);
+    position: relative;
+    overflow: hidden;
+    min-height: 142px;
+    padding: 19px;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: var(--soft);
+  }
+
+  .stat::after {
+    content: '';
+    position: absolute;
+    right: -20px;
+    bottom: -24px;
+    width: 76px;
+    height: 76px;
+    border-radius: 50%;
+    background: var(--stat-accent);
+    opacity: 0.38;
+  }
+
+  .stat__value,
+  .stat__label {
+    position: relative;
+    z-index: 1;
+    display: block;
+  }
+
+  .stat__value {
+    font-family: Georgia, 'Noto Serif SC', serif;
+    font-size: 34px;
+    font-weight: 800;
+    line-height: 1.1;
+  }
+
+  .stat__label {
+    margin-top: 11px;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  @media (max-width: 900px) {
+    .stats {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 600px) {
+    .stats {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  /* --------------------------------------------------------------
+   * 时间轴 —— 竖向连线加类型色节点。
+   * 节点圆点由 --node-tone / --node-base 指定，不依赖元素顺序。
+   * -------------------------------------------------------------- */
+  .timeline-rail {
+    position: relative;
+    padding-left: 26px;
+  }
+
+  .timeline-rail::before {
+    content: '';
+    position: absolute;
+    top: 10px;
+    bottom: 10px;
+    left: 7px;
+    width: 4px;
+    border-radius: 4px;
+    background: var(--pink);
+    opacity: 0.5;
+  }
+
+  .timeline-node {
+    --node-tone: var(--coral);
+    --node-base: var(--coral-base);
+    position: relative;
+  }
+
+  .timeline-node::before {
+    content: '';
+    position: absolute;
+    top: 24px;
+    left: -24px;
+    width: 12px;
+    height: 12px;
+    border: 3px solid var(--surface);
+    border-radius: 50%;
+    background: var(--node-tone);
+    box-shadow: 0 0 0 3px var(--node-base);
+  }
+
+  /* --------------------------------------------------------------
    * TagChip —— 筛选/标签。选中态只换色对，不停留在物理按下位置。
    * -------------------------------------------------------------- */
   .tag-chip {

@@ -10,13 +10,14 @@
 
 ```text
 app/                路由与页面编排（Server Component 优先）
-components/ui/      基础视觉组件（ToyButton / ThemeToggle）
+components/ui/      基础视觉组件（ToyButton / ToyCard / StatBlock / ThemeToggle）
 components/site/    站点外壳（Header / Footer / Nav）
 config/             站点身份、导航与快捷入口配置
 lib/content/        内容管线（schema → repository → toc / mdx）
 lib/interactions/   互动领域契约与校验器
 lib/cache/          缓存 tag 与失效矩阵
 lib/activity/       活动事件枚举
+lib/timeline/       时间轴领域（类型 → 视图 → 种子仓库）
 lib/supabase/       数据访问客户端
 content/posts/      MDX 正文（MVP 真实来源）
 docs/architecture/  决策与框架说明
@@ -100,7 +101,8 @@ content/posts/*.mdx
 | `/posts` | Dynamic | 读取 searchParams 做筛选分页 |
 | `/posts/[slug]` | SSG | `generateStaticParams` 预渲染全部已发布文章 |
 | `/about` | Static | 静态内容 |
-| `/timeline` | Static | Phase 4 接入数据后改为 ISR |
+| `/timeline` | Static | 读本地种子数据，客户端筛选，不读 searchParams |
+| `/timeline/[id]` | SSG | `generateStaticParams` 预渲染全部已发布节点 |
 | `/stats` | Static | Phase 7 接入聚合后改为 ISR |
 | `/robots.txt`、`/sitemap.xml` | Static | 由路由生成 |
 
@@ -112,7 +114,7 @@ First Load JS 共享 103 kB。根布局必须保持不读 `cookies()`，否则�
 
 | 阶段 | 接入位置 | 说明 |
 | --- | --- | --- |
-| Phase 4 | `app/(site)/timeline/page.tsx` | 先用本地种子数据，再接 Supabase |
+| Phase 4 | `lib/timeline/repository.ts` | 已用本地种子数据跑通；Phase 5 换实现，页面层不变 |
 | Phase 5 | `supabase/migrations/` | 按 D-03/D-04/D-05 建表与约束 |
 | Phase 6 | `app/api/likes|comments|views/route.ts` | 复用 `lib/interactions/validators.ts` |
 | Phase 7 | `lib/activity`、`lib/cache/tags` | 聚合任务与失效矩阵 |
@@ -132,3 +134,34 @@ npm run build      # 生产构建
 环境变量参考 `.env.example`。Phase 5 之前无需配置 Supabase 即可运行；一旦配置，`lib/supabase/*` 才会真正建立连接。
 
 **注意**：PowerShell 会话若以 UNC 路径（`\\?\D:\...`）作为 cwd，npm 的子进程会回退到 `C:\Windows` 并报 `EPERM`。执行命令前先 `Set-Location -LiteralPath 'D:\UnmCode\myweb'`。
+
+---
+
+## 9. 基础组件与时间轴领域
+
+### 9.1 组件分工
+
+| 组件 | 位置 | 职责 |
+| --- | --- | --- |
+| `ToyButton` | `components/ui/toy-button.tsx` | 唯一按压结构；`topClassName` 只调整按钮面内部排布，不承载状态样式 |
+| `ToyCard` | `components/ui/toy-card.tsx` | 实体内容卡；传 `href` 时整卡是链接根，否则是普通容器 |
+| `StatBlock` | `components/ui/stat-block.tsx` | 单个数据块，网格由外层 `.stats` 承担 |
+| `QuickLinkBar` | `components/site/quick-link-bar.tsx` | 快捷入口阵列，站内外链接共用 `ToyButton` |
+
+**不变量**：卡片内只能有一个交互根。需要多个链接时改用非链接卡片，禁止在 `a` 内嵌套 `a` 或 `button`。
+
+### 9.2 时间轴
+
+```text
+lib/timeline/types.ts       六种类型与三种状态的字面量定义
+lib/timeline/view.ts        排序、日期格式化、年/月分组
+lib/timeline/seed.ts        本地种子数据（Phase 4 的内容来源）
+lib/timeline/repository.ts  只暴露 published，并提供相邻节点查询
+config/timeline.ts          类型 → 标签/图标/色对的唯一映射
+```
+
+- 排序 `occurredAt desc`，以 `id` 作稳定次键；年/月分组在服务端完成。
+- 只有 `status === 'published'` 进入公开页面，`draft` 与 `archived` 均不展示。
+- 类型必须同时以文字和颜色表达，颜色只能取自 `config/timeline.ts`。
+- 筛选在客户端完成，`/timeline` 因此不读 `searchParams`，保持静态生成。
+- Phase 5 接入 Supabase 时只替换 `repository.ts` 的实现，页面层不变。

@@ -1,12 +1,15 @@
 import Link from 'next/link'
 
+import { QuickLinkBar } from '@/components/site/quick-link-bar'
 import { ToyButton } from '@/components/ui/toy-button'
-import { getEnabledQuickLinks, siteConfig } from '@/config/site'
+import { ToyCard } from '@/components/ui/toy-card'
+import { siteConfig } from '@/config/site'
 import { filePostRepository } from '@/lib/content/repository'
+
+const recentCardBases = ['coral', 'mint', 'sky'] as const
 
 export default async function HomePage() {
   const { items } = await filePostRepository.list({ pageSize: 3 })
-  const quickLinks = getEnabledQuickLinks()
 
   return (
     <>
@@ -18,8 +21,10 @@ export default async function HomePage() {
           >
             PERSONAL WEB / PLAYBOOK
           </span>
-          <h1 className="mt-5 font-display text-[clamp(40px,6vw,68px)] leading-[1.02]">
-            把每一次更新，做成可以按下的故事。
+          <h1 className="mt-5 font-display text-[clamp(30px,5.4vw,54px)] leading-[1.08]">
+            把每一次更新，
+            <br />
+            做成可以按下的故事。
           </h1>
           <p className="mt-4 max-w-[570px] text-[17px] leading-relaxed text-[var(--muted)]">
             {siteConfig.bio}
@@ -68,49 +73,7 @@ export default async function HomePage() {
             站内或站外链接以统一的立体按键阵列出现，按配置排序、可增删。
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-3.5 md:grid-cols-3 lg:grid-cols-6">
-          {quickLinks.map((link) =>
-            link.external ? (
-              <a
-                key={link.href}
-                href={link.href}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="toy-button toy-button--cream min-h-[112px] text-left"
-              >
-                <span className="toy-button__top flex h-[112px] flex-col items-start justify-between">
-                  <b className="text-xl leading-none">{link.icon}</b>
-                  <span>
-                    <b className="block text-base">{link.title}</b>
-                    {link.description ? (
-                      <small className="block text-xs font-semibold opacity-70">
-                        {link.description}
-                      </small>
-                    ) : null}
-                  </span>
-                </span>
-              </a>
-            ) : (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="toy-button toy-button--cream min-h-[112px] text-left"
-              >
-                <span className="toy-button__top flex h-[112px] flex-col items-start justify-between">
-                  <b className="text-xl leading-none">{link.icon}</b>
-                  <span>
-                    <b className="block text-base">{link.title}</b>
-                    {link.description ? (
-                      <small className="block text-xs font-semibold opacity-70">
-                        {link.description}
-                      </small>
-                    ) : null}
-                  </span>
-                </span>
-              </Link>
-            ),
-          )}
-        </div>
+        <QuickLinkBar />
       </section>
 
       <section className="mt-12" aria-labelledby="recent-title">
@@ -132,8 +95,13 @@ export default async function HomePage() {
           </p>
         ) : (
           <div className="grid gap-4">
-            {items.map((post) => (
-              <Link key={post.slug} href={`/posts/${post.slug}`} className="toy-card p-4">
+            {items.map((post, index) => (
+              <ToyCard
+                key={post.slug}
+                href={`/posts/${post.slug}`}
+                base={recentCardBases[index % recentCardBases.length]}
+                className="p-4"
+              >
                 <div className="grid gap-4 sm:grid-cols-[145px_1fr]">
                   <div
                     aria-hidden="true"
@@ -160,7 +128,7 @@ export default async function HomePage() {
                     ) : null}
                   </div>
                 </div>
-              </Link>
+              </ToyCard>
             ))}
           </div>
         )}

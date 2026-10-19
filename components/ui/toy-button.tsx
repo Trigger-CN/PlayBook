@@ -29,6 +29,8 @@ type SharedProps = {
   pressed?: boolean
   loading?: boolean
   className?: string
+  /** 只调整按钮面内部的内容排布（例如快捷入口的纵向卡片），不承载状态样式。 */
+  topClassName?: string
   children: ReactNode
 }
 
@@ -64,13 +66,16 @@ export function ToyButton(props: ToyButtonProps) {
     pressed,
     loading = false,
     className,
+    topClassName,
     children,
     ...rest
   } = props
 
   const classes = buttonClasses(variant, size, className)
   const ariaPressed = pressed === undefined ? undefined : pressed
-  const content = <span className="toy-button__top">{children}</span>
+  const content = (
+    <span className={cn('toy-button__top', topClassName)}>{children}</span>
+  )
 
   if (typeof rest.href === 'string') {
     const { href, ...anchorRest } = rest as AnchorProps
