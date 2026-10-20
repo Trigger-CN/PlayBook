@@ -147,8 +147,11 @@ npm run build      # 生产构建
 | `ToyCard` | `components/ui/toy-card.tsx` | 实体内容卡；传 `href` 时整卡是链接根，否则是普通容器 |
 | `StatBlock` | `components/ui/stat-block.tsx` | 单个数据块，网格由外层 `.stats` 承担 |
 | `QuickLinkBar` | `components/site/quick-link-bar.tsx` | 快捷入口阵列，站内外链接共用 `ToyButton` |
+| `TimelineCard` | `components/timeline/timeline-card.tsx` | 时间轴节点卡；日期、类型徽标、标题、首段与可选缩略图，列表与首页共用 |
 
 **不变量**：卡片内只能有一个交互根。需要多个链接时改用非链接卡片，禁止在 `a` 内嵌套 `a` 或 `button`。
+
+.stats 使用 `repeat(auto-fit, minmax(170px, 1fr))` 自适应列数，不再用媒体查询硬编码 5/3/2 列，因此任意数量的 `StatBlock` 都能均匀排布。
 
 ### 9.2 时间轴
 
@@ -165,3 +168,12 @@ config/timeline.ts          类型 → 标签/图标/色对的唯一映射
 - 类型必须同时以文字和颜色表达，颜色只能取自 `config/timeline.ts`。
 - 筛选在客户端完成，`/timeline` 因此不读 `searchParams`，保持静态生成。
 - Phase 5 接入 Supabase 时只替换 `repository.ts` 的实现，页面层不变。
+
+### 9.3 首页聚合
+
+首页由五个区块组成：Hero、快捷入口、最近文章、最近时间轴、站点概览。
+
+- 最近文章取 `filePostRepository.list({ pageSize: 3 })`。
+- 最近时间轴取 `listPublicTimelineItems()` 的前 5 条，与 `/timeline` 共用 `TimelineCard`。
+- 站点概览的四个数字全部来自真实内容源：已发布文章数取 `list` 返回的 `total`，时间轴记录数取公开节点总数，记录跨度取节点年份去重数，最近更新取文章 `updatedAt ?? publishedAt` 与最新节点的最大日期。
+- 浏览量、点赞、评论三项在 Phase 6/7 接入后再补，当前不显示占位数字。

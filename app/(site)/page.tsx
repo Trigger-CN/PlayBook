@@ -1,15 +1,41 @@
 import Link from 'next/link'
+import type { CSSProperties } from 'react'
 
 import { QuickLinkBar } from '@/components/site/quick-link-bar'
+import { TimelineCard } from '@/components/timeline/timeline-card'
+import { StatBlock } from '@/components/ui/stat-block'
 import { ToyButton } from '@/components/ui/toy-button'
 import { ToyCard } from '@/components/ui/toy-card'
 import { siteConfig } from '@/config/site'
+import { timelineTypeStyles } from '@/config/timeline'
 import { filePostRepository } from '@/lib/content/repository'
+import { listPublicTimelineItems } from '@/lib/timeline/repository'
 
 const recentCardBases = ['coral', 'mint', 'sky'] as const
 
+/** 首页展示最近 5 条时间轴节点（路线图 Phase 3）。 */
+const HOME_TIMELINE_LIMIT = 5
+
+function formatMonthDay(isoDate: string): string {
+  const [, month, day] = isoDate.split('-')
+  if (!month || !day) return '—'
+  return `${month}.${day}`
+}
+
 export default async function HomePage() {
-  const { items } = await filePostRepository.list({ pageSize: 3 })
+  const { items, total: postTotal } = await filePostRepository.list({ pageSize: 3 })
+  const timelineItems = listPublicTimelineItems()
+  const recentTimeline = timelineItems.slice(0, HOME_TIMELINE_LIMIT)
+
+  const yearsCovered = new Set(timelineItems.map((item) => item.occurredAt.slice(0, 4))).size
+  const latestCandidates = [
+    ...items.map((post) => post.updatedAt ?? post.publishedAt),
+    ...recentTimeline.slice(0, 1).map((item) => item.occurredAt),
+  ]
+    .filter((value) => value.length > 0)
+    .sort()
+  const latestDate =
+    latestCandidates.length > 0 ? latestCandidates[latestCandidates.length - 1] : ''
 
   return (
     <>
@@ -132,6 +158,62 @@ export default async function HomePage() {
             ))}
           </div>
         )}
+      </section>
+
+      <section className="mt-12" aria-labelledby="home-timeline-title">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-6">
+          <h2 id="home-timeline-title" className="font-display text-3xl">
+            最近时间轴
+          </h2>
+          <Link
+            href="/timeline"
+            className="text-sm font-bold text-[var(--muted)] hover:text-[var(--ink)]"
+          >
+            查看全部 →
+          </Link>
+        </div>
+
+        {recentTimeline.length === 0 ? (
+          <p
+            className="rounded-2xl border-2 border-dashed p-8 text-center text-sm text-[var(--muted)]"
+            style={{ borderColor: 'var(--line)', background: 'var(--soft)' }}
+          >
+            还没有记录，第一条正在路上。
+          </p>
+        ) : (
+          <ol className="timeline-rail grid gap-4">
+            {recentTimeline.map((item) => {
+              const typeStyle = timelineTypeStyles[item.type]
+              const nodeStyle = {
+                '--node-tone': `var(--${typeStyle.tone})`,
+                '--node-base': `var(--${typeStyle.tone}-base)`,
+              } as CSSProperties
+
+              return (
+                <li key={item.id} className="timeline-node" style={nodeStyle}>
+                  <TimelineCard item={item} />
+                </li>
+              )
+            })}
+          </ol>
+        )}
+      </section>
+
+      <section className="mt-12" aria-labelledby="overview-title">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-6">
+          <h2 id="overview-title" className="font-display text-3xl">
+            站点概览
+          </h2>
+          <p className="max-w-[560px] text-sm text-[var(--muted)]">
+            数字来自当前内容源；浏览量、点赞与评论会在互动数据接入后补上。
+          </p>
+        </div>
+        <div className="stats">
+          <StatBlock value={String(postTotal)} label="已发布文章" tone="mint" />
+          <StatBlock value={String(timelineItems.length)} label="时间轴记录" tone="coral" />
+          <StatBlock value={`${yearsCovered} 年`} label="记录跨度" tone="cream" />
+          <StatBlock value={formatMonthDay(latestDate)} label="最近更新" tone="sky" />
+        </div>
       </section>
     </>
   )

@@ -3,11 +3,11 @@
 import { useMemo, useState } from 'react'
 import type { CSSProperties } from 'react'
 
+import { TimelineCard } from '@/components/timeline/timeline-card'
 import { ToyButton } from '@/components/ui/toy-button'
-import { ToyCard } from '@/components/ui/toy-card'
 import { timelineTypeStyles } from '@/config/timeline'
 import { TIMELINE_TYPES, type TimelineItem, type TimelineType } from '@/lib/timeline/types'
-import { firstParagraph, formatTimelineDay, groupTimelineItems } from '@/lib/timeline/view'
+import { groupTimelineItems } from '@/lib/timeline/view'
 
 type Filter = TimelineType | 'all'
 
@@ -111,34 +111,7 @@ export function TimelineExplorer({ items }: { items: TimelineItem[] }) {
 
                           return (
                             <li key={item.id} className="timeline-node" style={nodeStyle}>
-                              <ToyCard href={`/timeline/${item.id}`} base={typeStyle.tone} className="p-4">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <time
-                                    dateTime={item.occurredAt}
-                                    className="text-xs font-bold text-[var(--muted)]"
-                                  >
-                                    {formatTimelineDay(item.occurredAt)}
-                                  </time>
-                                  <span
-                                    className="inline-flex items-center gap-1 rounded-full px-2 py-[3px] text-[11px] font-extrabold"
-                                    style={{
-                                      background: `var(--${typeStyle.tone})`,
-                                      color: '#211522',
-                                    }}
-                                  >
-                                    <span aria-hidden="true">{typeStyle.icon}</span>
-                                    {typeStyle.label}
-                                  </span>
-                                </div>
-                                {item.title ? (
-                                  <h4 className="my-1.5 font-display text-lg leading-snug">
-                                    {item.title}
-                                  </h4>
-                                ) : null}
-                                <p className="line-clamp-2 text-sm leading-relaxed text-[var(--muted)]">
-                                  {firstParagraph(item.content)}
-                                </p>
-                              </ToyCard>
+                              <TimelineCard item={item} />
                             </li>
                           )
                         })}

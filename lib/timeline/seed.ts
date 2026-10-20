@@ -13,6 +13,8 @@ export const timelineSeed: TimelineItem[] = [
     occurredAt: '2026-07-17',
     content:
       '脚手架、主题 token 与文章管线终于跑通，第一次把自己的站点推到线上。\n\n按钮按下去那一下有实体的手感，是这一版最满意的部分；剩下的页面会沿着同一条语言慢慢长出来。',
+    imageUrl: '/images/timeline/site-launch.svg',
+    imageAlt: '浏览器窗口里排着标题与按钮的插画',
     externalUrl: 'https://nextjs.org/blog',
   },
   {
@@ -23,6 +25,8 @@ export const timelineSeed: TimelineItem[] = [
     occurredAt: '2026-07-11',
     content:
       '把显示器抬高了一点，键盘换成更矮的那把，桌面只留一杯水和一本正在读的书。整理桌面其实是在整理注意力。',
+    imageUrl: '/images/timeline/desk-setup.svg',
+    imageAlt: '窗边工作台与显示器、绿植的插画',
   },
   {
     id: 'theme-button-spec',
@@ -59,6 +63,8 @@ export const timelineSeed: TimelineItem[] = [
     occurredAt: '2026-04-02',
     content:
       '雨停了才出门，湖面还有一层薄雾。走了整整一圈，中途在一棵柳树下坐了很久，什么也没做。',
+    imageUrl: '/images/timeline/hangzhou-lake.svg',
+    imageAlt: '雨后湖面与柳树的插画',
   },
   {
     id: 'font-switch',
@@ -103,6 +109,8 @@ export const timelineSeed: TimelineItem[] = [
     occurredAt: '2025-10-08',
     content:
       '没有排行程，每天出门随便走。早上在鸭川边看人遛狗，下午钻进旧书店，晚上回住处写字。\n\n七天里说得最少，想得最多。',
+    imageUrl: '/images/timeline/kyoto-torii.svg',
+    imageAlt: '山间红色鸟居的插画',
   },
   {
     id: 'first-oss-component',
