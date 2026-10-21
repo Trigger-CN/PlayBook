@@ -1,26 +1,27 @@
 import 'server-only'
 
 import { createServerClient } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
+
+import type { Database } from './database.types'
+import { getSupabasePublicConfig, requireSupabasePublicConfig } from './env'
+
+export { isSupabaseConfigured } from './env'
 
 /**
  * 服务端 Supabase client（设计 module 12 §9）。
- * 使用 anon key + 用户会话；service role 只在明确的 server-only helper 中使用，
- * 且永远不进入客户端 bundle。
+ * 使用 anon key + 用户会话；RLS 生效。
+ *
+ * 注意：本函数调用 cookies()，会让调用它的路由退化为 Dynamic。
+ * 因此只应在需要会话的 Route Handler / Server Action / 后台页面中使用，
+ * 公开内容页应改用 createSupabaseStaticClient 或 service role 查询。
  */
 export async function createSupabaseServerClient() {
+  const { url, anonKey } = requireSupabasePublicConfig()
   const cookieStore = await cookies()
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-  if (!url || !anonKey) {
-    throw new Error(
-      '缺少 Supabase 环境变量：请在 .env.local 中配置 NEXT_PUBLIC_SUPABASE_URL 与 NEXT_PUBLIC_SUPABASE_ANON_KEY',
-    )
-  }
-
-  return createServerClient(url, anonKey, {
+  return createServerClient<Database>(url, anonKey, {
     cookies: {
       getAll() {
         return cookieStore.getAll()
@@ -38,7 +39,19 @@ export async function createSupabaseServerClient() {
   })
 }
 
-/** 判断 Supabase 是否已配置，供页面优雅降级使用。 */
-export function isSupabaseConfigured(): boolean {
-  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+/**
+ * 不读取 cookie 的只读客户端，用于公开数据的静态/ISR 查询。
+ * 没有会话，RLS 以 anon 身份执行，只能读到公开数据，因此不会让路由退化为 Dynamic。
+ */
+export function createSupabaseStaticClient() {
+  const config = getSupabasePublicConfig()
+  if (!config) {
+    throw new Error(
+      '缺少 Supabase 环境变量：请在 .env.local 中配置 NEXT_PUBLIC_SUPABASE_URL 与 NEXT_PUBLIC_SUPABASE_ANON_KEY（可参考 .env.example）',
+    )
+  }
+
+  return createClient<Database>(config.url, config.anonKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  })
 }

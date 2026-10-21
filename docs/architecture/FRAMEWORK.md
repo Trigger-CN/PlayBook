@@ -160,6 +160,7 @@ lib/timeline/types.ts       六种类型与三种状态的字面量定义
 lib/timeline/view.ts        排序、日期格式化、年/月分组
 lib/timeline/seed.ts        本地种子数据（Phase 4 的内容来源）
 lib/timeline/repository.ts  只暴露 published，并提供相邻节点查询
+lib/supabase/database.types.ts  数据库 schema 的 TypeScript 映射
 config/timeline.ts          类型 → 标签/图标/色对的唯一映射
 ```
 
@@ -177,3 +178,24 @@ config/timeline.ts          类型 → 标签/图标/色对的唯一映射
 - 最近时间轴取 `listPublicTimelineItems()` 的前 5 条，与 `/timeline` 共用 `TimelineCard`。
 - 站点概览的四个数字全部来自真实内容源：已发布文章数取 `list` 返回的 `total`，时间轴记录数取公开节点总数，记录跨度取节点年份去重数，最近更新取文章 `updatedAt ?? publishedAt` 与最新节点的最大日期。
 - 浏览量、点赞、评论三项在 Phase 6/7 接入后再补，当前不显示占位数字。
+
+### 9.4 Supabase 数据层（Phase 5）
+
+```text
+supabase/migrations/20261021000001_init_schema.sql   7 张表、check 约束、索引、updated_at 触发器
+supabase/migrations/20261021000002_rls_policies.sql  RLS 策略与 is_admin()
+supabase/migrations/20261021000003_public_counts.sql 聚合与去重函数（仅 service_role 可执行）
+supabase/seed.sql                                    开发种子数据，on conflict do nothing
+lib/supabase/env.ts             读取 NEXT_PUBLIC_* 配置，空串视为未配置
+lib/supabase/database.types.ts  Database 泛型，随迁移同步维护
+lib/supabase/server.ts          createSupabaseServerClient（带会话）/ createSupabaseStaticClient（不带 cookie）
+lib/supabase/client.ts          浏览器客户端，只使用 anon key
+lib/supabase/admin.ts           service role，首行 import 'server-only'
+```
+
+**约束**：
+
+- 迁移必须可重复执行；新增字段时同步 `database.types.ts`。
+- `admin.ts` 只能被 Route Handler、Server Action 或服务端脚本引用；客户端组件一旦引入会在构建期失败，这是有意设置的护栏。
+- 公开内容页用 `createSupabaseStaticClient()`，不要用带会话的版本，否则路由会退化为 Dynamic。
+- 无 Supabase 凭据时整站仍可构建与运行，因为当前数据源仍是 `content/posts` 与 `lib/timeline/seed.ts`。
