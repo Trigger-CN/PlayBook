@@ -194,6 +194,8 @@ docs/architecture/       架构决策与框架说明
 
 **决策三：文章正文仍留在 `content/posts/*.mdx`，数据库只存元数据。**
 
+> **已被 D-13 取代**（2026-07-17）：正文现已迁入 `posts.body`，`source = 'db'`。本节保留以记录过渡期的取舍。
+
 `postgresPorts.posts.*` 目前仍转发到 `filePostRepository`（`source = 'file'`）。这样保住了文章页的 SSG，把动态需求限制在真正需要的地方。代价是文章元数据暂时不来自数据库；等正文迁库时只改这一处。
 
 **决策四：SQL 只写一份，靠迁移执行器的能力探测分层，而不是维护两份 DDL。**
@@ -230,3 +232,128 @@ docs/architecture/       架构决策与框架说明
 - `.next/static` 中 `DATABASE_URL` / 连接串 / 密码命中数 = 0
 
 **未验证范围**：Supabase 侧（`000002` 从未在真实 Supabase 上执行过，因为没有项目凭据）；文章正文迁库（本轮刻意不做）。
+
+---
+
+## D-13 互动层、正文迁库、后台认证与三个真实缺陷
+
+本轮（Phase 6–8）把数据端口层从「只读内容」扩展为「读 + 写 + 统计」，并把文章正文真正迁入数据库。以下决策均已用真实 PostgreSQL 18.4 端到端验证（本机无原生 PostgreSQL，改用 npm 包 `embedded-postgres` 起的临时实例，不进项目依赖）。
+
+**决策一：互动写入只经服务端 Route Handler，`filePorts` 的写方法显式抛错。**
+
+`lib/data/ports.ts` 新增 `InteractionPort`（`getLikeState` / `getLikeCounts` / `addLike` / `removeLike` / `recordView` / `listApprovedComments` / `countApprovedComments` / `createComment`）、`StatsPort`（`getContentTotals` / `getSiteTotals` / `listPopular` / `listRecentActivity`）、`ActivityPort`（`record` / `recordViewMilestone` / `backfillDailyStats`）。
+
+`filePorts` 的互动与活动方法**全部抛错**并提示需配置 `DATABASE_URL`，不返回 0 或空数组。理由与 D-12 决策二一致：假成功会让页面看起来正常而数据永远不增长。唯一例外是 `stats.getSiteTotals()` 的 views/likes/comments 返回真实的 0——文件模式确实没有这些数据，代码注释已注明这不是占位符。
+
+**决策二：`visitor_id` 用 httpOnly cookie，点赞 GET 不创建 cookie。**
+
+访客标识为 `randomUUID().replace(/-/g, '')`（32 字符，符合 `likes_visitor_id_check` 的 8..128），存 `httpOnly` cookie `playbook-visitor`，`sameSite: 'lax'`、一年有效、生产环境 `secure`。服务端仍按 `/^[A-Za-z0-9_-]{8,128}$/` 校验，不信任 cookie 内容。
+
+`GET /api/likes` **只读不写** cookie：列表页与首屏会批量请求，若在这里下发 cookie，会让从未互动的访客也被种上标识。代价是详情页首屏只能渲染权威 `count`，`liked` 由 `like-button` 挂载后补一次 GET 取得（且仅在 `!inFlight.current` 时采纳，避免覆盖刚点的乐观值）。
+
+**决策三：浏览量去重交给数据库函数，不在应用层「先查后写」。**
+
+`record_page_view` 在单条语句内完成 30 分钟窗口去重，避免并发窗口内同一访客被计两次。`views` 接口在无库时返回 **204** 而非 503/500——页面照常阅读，只是计数不增长，返回错误只会制造前端噪音。
+
+**决策四：评论不做乐观插入，`status` 在 SQL 里写死。**
+
+评论默认 `pending`，若前端乐观插入再消失，比「提交后等审核」更差（module 06 §8）。因此提交成功后才清空正文，失败保留输入。`createComment` 的 `status` 由 SQL 常量给出，不接受调用方传入——即使有人伪造请求体也无法自批。
+
+**决策五：文章正文迁入 `posts.body`，但保留 MDX 写作与构建期校验。**
+
+`posts.source = 'db'` 成为正文真源，`postgresPorts.posts.*` 真正查 `public.posts`（列表查询只取元数据列，不拉 `body`，避免列表页为几百 KB 正文付代价）。
+
+作者仍用 `content/posts/*.mdx` 写作（后台在线编辑器未实现），因此需要一条显式的「文件 → 数据库」通道：`npm run db:import`（`scripts/db-import-content.mjs`）。语义为以 slug 为键 upsert，内容未变则跳过（不刷新 `version`），有变化 `version + 1`，frontmatter 非法直接失败并指出文件。**不让页面同时猜两个来源**——那会制造「改了文件但页面没变」的静默不一致。
+
+阅读时间口径（中文按 1、西文词按 1.6 加权，÷350，最少 1 分钟）在 `lib/content/repository.ts`、`lib/data/adapters/postgres.ts`、`scripts/db-import-content.mjs` 三处必须一致，改动时需同步。
+
+**决策六：后台认证用一次性令牌，不自建密码存储。**
+
+设计文档 08/16 要求 Supabase Auth 魔法链接，但当前无 Supabase 项目凭据。过渡实现与魔法链接同构：邮箱 → 一次性令牌链接 → 兑换会话。将来切 Supabase Auth 只需替换 `lib/auth/admin.ts` 与登录页，`requireAdmin()` 的调用方式不变。
+
+- 令牌与会话**只存哈希**（`hashValue('admin-token:' + token)`），不存明文；有效期令牌 15 分钟、会话 7 天。
+- 一次性语义交给数据库：`update ... set used_at = now() where token_hash = $1 and used_at is null and expires_at > now() returning email`，天然防并发双花。
+- 哈希比较用 `timingSafeEqual`，避免比较本身成为旁路。
+- 白名单来自 `ADMIN_EMAIL`（逗号分隔）。**未配置时后台整体关闭**——忘记配环境变量不应导致任何人都能进后台。
+- 无论邮箱是否在白名单都返回同一句文案，防「某邮箱是否为管理员」的探测器。
+- `safeAdminRedirect` 必须 `startsWith('/admin')`，拒绝 `//host`、含 `\`、含 `..` 段，非法回退 `/admin`。
+- 退出走 POST / Server Action，不用可被预取的 GET 链接。
+- 每个 Server Action **独立鉴权**：`app/admin/layout.tsx` 的守卫只保护页面渲染，Action 是独立入口。
+
+**决策七：后台用独立仓储，不复用公开端口。**
+
+`lib/admin/repository.ts` 独立实现。理由：公开端口只返回 `approved` 评论与 `published` 内容；后台需要看到全部状态。若为后台给公开端口加「能看到未审核内容」的能力，会把这个能力泄漏进公开端口的类型里。
+
+并发审核用条件更新 `where id = $1 and status = $4`（`expectedStatus`）：两人同时点「批准」只有第一个成功，第二个收到冲突提示而非静默覆盖。
+
+**决策八：后台移动端导航降级为可换行列表（有意的范围裁剪）。**
+
+设计 08 §2.2 要求抽屉 + 焦点陷阱 + 滚动锁定。本轮降级为可换行的横向列表，代码注释写明理由：「一个能用的简单导航，好过一个没做完的抽屉」。
+
+---
+
+## 附：本轮修复的三个真实缺陷
+
+三者都不是静态审查能发现的，全部由真实数据库实测暴露。
+
+### 缺陷一：`timestamptz` 让时间轴日期少一天
+
+`timeline_items.occurred_at` 语义是「事件发生在哪一天」，界面只显示 `YYYY-MM-DD`，但列类型是 `timestamptz`。写入 `'2026-07-17'` 后读回，`toISOString().slice(0, 10)` 得到 `2026-07-16`（服务器时区 Asia/Shanghai，偏移 +08:00）。影响排序、年/月分组与 SEO `dateTime`，且偏移量随会话时区变化。
+
+**否决的修法**：迁移里 `set_config('timezone', 'UTC', true)` 再 `::date`。这会让 +08:00 写入的数据整体**前移一天**，比原 bug 更糟。
+
+**采用的修法**（两处必须同时改）：
+1. `20261021000005_timeline_date.sql`：把列改为 `date`，用 `DO` 块做幂等判断（已是 `date` 则 `return`）、转换前后行数校验（不等则 `raise exception`）、样本对比与 `raise notice`。**按库默认时区取日期部分**，不固定 UTC。
+2. `lib/data/adapters/postgres.ts`：`occurred_at` 类型改 `string`，读取用 `to_char(col, 'YYYY-MM-DD')`；`published_at` / `updated_at` 同样处理；`toIsoDate()` 只做防御性 `slice(0, 10)`，不做时区换算。
+
+**硬规则**：纯日期列一律 `date` + `to_char` 读取，绝不在 JS 里对 `Date` 调 `toISOString().slice(0, 10)`。`posts.published_at` 保持 `timestamptz`——它是真实瞬间，发布闸门 `published_at <= now()` 依赖时刻。
+
+### 缺陷二：`updated_at` 触发器把「编辑日期」改成「导入时刻」
+
+`posts.updated_at` 的产品语义是「作者最后一次编辑的日期」，显示在文章页「更新于 …」。但 `posts_set_updated_at` 触发器每次 UPDATE 都无条件 `new.updated_at = now()`，导致每跑一次导入，所有文章的「更新于」都变成部署当天。
+
+**否决的修法**：`if new.updated_at is distinct from old.updated_at then return new; end if;`。重跑导入时 frontmatter 值与库中旧值相同（`old = new`），触发器无法区分「调用方没写这个字段」与「写了同一个值」，仍会覆盖。
+
+**采用的修法**：用事务级 GUC 作显式信号。`20261021000006_updated_at_trigger.sql` 中 `if coalesce(current_setting('app.preserve_updated_at', true), 'off') = 'on' then return new; end if;`。用 `set local` 而非 `set`，标志随事务结束自动失效，不污染连接池里的后续请求；`current_setting(..., true)` 的 `true` 保证参数不存在时返回 null 而不报错。
+
+配套两处：导入脚本在 `begin` 后立即 `set local app.preserve_updated_at = 'on'`；并把 `updated_at` 纳入「内容是否变化」的判定，否则一旦被改坏就再也修不回来（自我修复能力）。
+
+### 缺陷三：`on conflict` 无法匹配部分唯一索引（静默失效）
+
+`activity_events` 的去重索引是**部分**唯一索引 `on (dedupe_key) where dedupe_key is not null`，而 `record_activity` 里写的是 `on conflict (dedupe_key) do nothing`。PostgreSQL 要求推断目标匹配索引的完整定义（含谓词），因此报 `there is no unique or exclusion constraint matching the ON CONFLICT specification`。
+
+**为什么危险**：所有调用点都用 `.catch(() => {})` 静默兜底（理由是「活动流不是点赞的必要条件」），页面上完全看不出异常，只是活动流永远为空。**静默失效比报错更难发现**——不跑真实数据库，这个缺陷会潜伏到用户问「为什么最近活跃一直是空的」。
+
+**修法**：`20261021000010_fix_record_activity.sql` 补上谓词 `on conflict (dedupe_key) where dedupe_key is not null do nothing`，保留部分索引不变（`dedupe_key` 为 null 的事件允许重复是刻意的：无去重键的事件本来就该每条都记）。
+
+---
+
+## 附：本轮实测证据
+
+**真实 PostgreSQL 18.4**：
+
+- 迁移应用 000001/000003–000010，跳过 000002（自建库无 `auth` schema）
+- 文章迁库后 `source = 'db'`、`body_len = 450`、`published_at = 2026-07-17`、`updated_at = 2026-07-18`（均与 frontmatter 一致）；幂等重跑跳过 0 变更；被改坏的 `updated_at` 能自我修复
+- 时间轴列类型为 `date`，日期漂移 0 条，构建产物 `timeline.html` 的 `dateTime` 序列无偏移
+- `record_activity` 首次 `true` / 重复 `false`；非法 `event_type` 被 check 拦截
+- 浏览里程碑：造 10 条浏览后首次 `true` / 重复 `false`，`metadata = {total: 10, milestone: 10}`
+- `aggregate_daily_stats` 连跑两次结果完全一致（绝对值 upsert，可重复跑）
+- `list_public_activity` 不含 `comment_created`（待审核事件不外泄）
+- 函数 ACL：`record_activity` / `record_view_milestone` / `purge_expired_admin_auth` 均为 `playbook=X/playbook`（PUBLIC 已撤销）；`list_public_activity` 保留 PUBLIC（刻意，见 D-13 决策一说明）
+- 登录令牌：首次兑换 1、二次兑换 0、过期令牌 0
+- 评论审核：第一次批准 1、第二次批准 0（不覆盖），`pending` 0 → `approved` 1
+
+**构建与隔离**：
+
+- 无 `DATABASE_URL`：`typecheck` exit=0，`build` exit=0，**25/25 静态页**；`/api/*` 与 `/admin/*` 全部 `ƒ`；公开内容页保持 `○` / `●`，路由类型不退化
+- 有 `DATABASE_URL` + `ADMIN_EMAIL`：`build` exit=0
+- `.next/static` 敏感项扫描：`INTERACTION_HASH_SALT` / `ADMIN_EMAIL` / `SUPABASE_SERVICE_ROLE_KEY` / `postgres://` / `playbook-admin` 均 0 命中；唯一 `DATABASE_URL` 命中已定性为 `like-button.tsx` 的用户文案「配置 DATABASE_URL 后可用」，属纯字符串字面量，不含连接串或密码
+- 全仓 `%TSD` 加密头扫描无命中
+
+**未验证范围**（必须明示）：
+
+- `000002_rls_policies.sql` **从未在真实 Supabase 上执行过**（无项目凭据），只做了静态审查；自建库上它被 `db-migrate.mjs` 的 `/_rls_policies\.sql$/` 规则正确跳过
+- 后台登录的浏览器端流程未做真实点击验证，只验证了底层 SQL 令牌语义与构建产物；真实邮件通道未接入，开发环境靠登录页回显 `devLink` 完成流程
+- `middleware.ts` 未实现（D-09 列为 Phase 8 交付物）；不影响安全性，授权在 `app/admin/layout.tsx` 与每个 Server Action 各做一次
+- 后台移动端抽屉未实现（见 D-13 决策八）
+- Cloudflare Turnstile 未接入，评论防刷目前只靠限流 + `pending` + 数据库唯一约束

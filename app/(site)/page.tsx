@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import type { CSSProperties } from 'react'
 
+import { ActivityFeed } from '@/components/site/activity-feed'
 import { QuickLinkBar } from '@/components/site/quick-link-bar'
 import { TimelineCard } from '@/components/timeline/timeline-card'
 import { StatBlock } from '@/components/ui/stat-block'
@@ -8,7 +9,7 @@ import { ToyButton } from '@/components/ui/toy-button'
 import { ToyCard } from '@/components/ui/toy-card'
 import { siteConfig } from '@/config/site'
 import { timelineTypeStyles } from '@/config/timeline'
-import { getDataPorts } from '@/lib/data'
+import { getDataPorts, hasDatabaseUrl } from '@/lib/data'
 
 const recentCardBases = ['coral', 'mint', 'sky'] as const
 
@@ -23,11 +24,13 @@ function formatMonthDay(isoDate: string): string {
 
 export default async function HomePage() {
   const ports = getDataPorts()
-  const [{ items, total: postTotal }, timelineItems] = await Promise.all([
+  const [{ items, total: postTotal }, timelineItems, totals] = await Promise.all([
     ports.posts.list({ pageSize: 3 }),
     ports.timeline.listPublic(),
+    ports.stats.getSiteTotals(),
   ])
   const recentTimeline = timelineItems.slice(0, HOME_TIMELINE_LIMIT)
+  const dbEnabled = hasDatabaseUrl()
 
   const yearsCovered = new Set(timelineItems.map((item) => item.occurredAt.slice(0, 4))).size
   const latestCandidates = [
@@ -207,7 +210,9 @@ export default async function HomePage() {
             站点概览
           </h2>
           <p className="max-w-[560px] text-sm text-[var(--muted)]">
-            数字来自当前内容源；浏览量、点赞与评论会在互动数据接入后补上。
+            {dbEnabled
+              ? '浏览、点赞、评论为当前累计有效值；文章与时间轴为已发布数。'
+              : '文章与时间轴数字来自内容源；浏览、点赞、评论需要数据库，当前显示 0。'}
           </p>
         </div>
         <div className="stats">
@@ -216,6 +221,23 @@ export default async function HomePage() {
           <StatBlock value={`${yearsCovered} 年`} label="记录跨度" tone="cream" />
           <StatBlock value={formatMonthDay(latestDate)} label="最近更新" tone="sky" />
         </div>
+        <div className="stats mt-4">
+          <StatBlock value={String(totals.views)} label="累计浏览" tone="sky" />
+          <StatBlock value={String(totals.likes)} label="累计点赞" tone="coral" />
+          <StatBlock value={String(totals.comments)} label="已通过评论" tone="mint" />
+        </div>
+      </section>
+
+      <section className="mt-12" aria-labelledby="activity-title">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-6">
+          <h2 id="activity-title" className="font-display text-3xl">
+            最近活跃
+          </h2>
+          <p className="max-w-[560px] text-sm text-[var(--muted)]">
+            来自真实事件记录，不含待审核内容与访客标识。
+          </p>
+        </div>
+        <ActivityFeed limit={8} />
       </section>
     </>
   )

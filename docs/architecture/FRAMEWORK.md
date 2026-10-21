@@ -97,14 +97,16 @@ content/posts/*.mdx
 
 | 路由 | 类型 | 说明 |
 | --- | --- | --- |
-| `/` | Static | 首页聚合 |
-| `/posts` | Dynamic | 读取 searchParams 做筛选分页 |
-| `/posts/[slug]` | SSG | `generateStaticParams` 预渲染全部已发布文章 |
+| `/` | Static | 首页聚合（含累计浏览/点赞/评论与最近活跃） |
+| `/posts` | Dynamic | 读取 searchParams 做筛选分页（刻意如此） |
+| `/posts/[slug]` | SSG | `generateStaticParams` 预渲染全部已发布文章；正文来自 `posts.body` |
 | `/about` | Static | 静态内容 |
-| `/timeline` | Static | 读本地种子数据，客户端筛选，不读 searchParams |
+| `/timeline` | Static | 客户端筛选，不读 searchParams |
 | `/timeline/[id]` | SSG | `generateStaticParams` 预渲染全部已发布节点 |
-| `/stats` | Static | Phase 7 接入聚合后改为 ISR |
-| `/robots.txt`、`/sitemap.xml` | Static | 由路由生成 |
+| `/stats` | Static | 占位骨架，待接入聚合展示 |
+| `/api/likes`、`/api/comments`、`/api/views` | Dynamic | Route Handler，`runtime = 'nodejs'` + `force-dynamic` |
+| `/admin`、`/admin/comments`、`/admin/timeline`、`/admin/login`、`/admin/login/verify` | Dynamic | 读会话 cookie，`force-dynamic` + `noindex,nofollow` |
+| `/robots.txt`、`/sitemap.xml`、`/_not-found` | Static | 由路由生成 |
 
 First Load JS 共享 103 kB。根布局必须保持不读 `cookies()`，否则整站退化为 Dynamic。
 
@@ -112,13 +114,13 @@ First Load JS 共享 103 kB。根布局必须保持不读 `cookies()`，否则�
 
 ## 7. 后续阶段的接入点
 
-| 阶段 | 接入位置 | 说明 |
+| Phase | 接入位置 | 状态 |
 | --- | --- | --- |
-| Phase 4 | `lib/timeline/repository.ts` | 已用本地种子数据跑通；Phase 5 换实现，页面层不变 |
-| Phase 5 | `supabase/migrations/` | 按 D-03/D-04/D-05 建表与约束 |
-| Phase 6 | `app/api/likes|comments|views/route.ts` | 复用 `lib/interactions/validators.ts` |
-| Phase 7 | `lib/activity`、`lib/cache/tags` | 聚合任务与失效矩阵 |
-| Phase 8 | `app/admin/`、`middleware.ts` | `requireAdmin()` 统一授权 |
+| Phase 4 | `lib/timeline/repository.ts` | 已完成；页面已改走 `lib/data` 端口层 |
+| Phase 5 | `supabase/migrations/` | 已完成（000001–000010） |
+| Phase 6 | `app/api/{likes,comments,views}/route.ts` | 已完成 |
+| Phase 7 | `lib/activity`、`lib/cache/tags` | 已完成 |
+| Phase 8 | `app/admin/`、`lib/auth/admin.ts` | 已完成；`middleware.ts` 未实现 |
 
 ---
 
@@ -178,7 +180,8 @@ config/timeline.ts          类型 → 标签/图标/色对的唯一映射
 - 最近文章取 `getDataPorts().posts.list({ pageSize: 3 })`。
 - 最近时间轴取 `getDataPorts().timeline.listPublic()` 的前 5 条，与 `/timeline` 共用 `TimelineCard`。
 - 站点概览的四个数字全部来自真实内容源：已发布文章数取 `list` 返回的 `total`，时间轴记录数取公开节点总数，记录跨度取节点年份去重数，最近更新取文章 `updatedAt ?? publishedAt` 与最新节点的最大日期。
-- 浏览量、点赞、评论三项在 Phase 6/7 接入后再补，当前不显示占位数字。
+- 有数据库时额外显示累计浏览、累计点赞、已通过评论三个 `StatBlock`（`ports.stats.getSiteTotals()`），并渲染「最近活跃」区块。无数据库时这三项不显示，也不渲染活跃区块——**不显示会被误读为「真的没有数据」的假 0**。
+- 概览文案随有无数据库切换，让读者知道当前是文件模式还是数据库模式。
 
 ### 9.4 数据端口层与两套实现（当前主用自建 PostgreSQL）
 
@@ -231,8 +234,127 @@ npm run db:migrate        # 应用未执行的迁移（自建库自动跳过 000
 npm run db:migrate:dry    # 只列出将执行的迁移
 npm run db:seed           # 迁移后写入 seed.sql
 npm run db:health         # 连通性 + 表/函数/迁移自检
+npm run db:import         # 把 content/posts/*.mdx 同步进 posts.body（source='db'）
+npm run db:import:dry     # 只看会新增/更新/跳过哪些文章
+npm run db:aggregate      # 聚合昨日统计；--days N 回填，--date YYYY-MM-DD 指定单日
 ```
 
 已用真实 PostgreSQL 18.4 验证：迁移全部跑通且幂等、约束拦截有效、去重函数生效、用 `DATABASE_URL` 构建后页面数据确实来自库、无 `DATABASE_URL` 时 25/25 静态页且路由类型不退化。
 
-**已知未验证**：`000002_rls_policies.sql` 从未在真实 Supabase 上执行（缺项目凭据）；文章正文仍留在 MDX，未迁库。
+**已知未验证**：`000002_rls_policies.sql` 从未在真实 Supabase 上执行（缺项目凭据）。
+
+---
+
+## 10. 互动层（点赞 / 评论 / 浏览量）
+
+### 10.1 接口契约
+
+| 路由 | 方法 | 输入 | 输出 |
+| --- | --- | --- | --- |
+| `/api/likes` | `GET` | `?target_type=&target_id=` | `{ count, liked }` |
+| `/api/likes` | `POST` | `{ targetType, targetId }` | `{ count, liked }` |
+| `/api/likes` | `DELETE` | `{ targetType, targetId }` | `{ count, liked }` |
+| `/api/comments` | `GET` | `?target_type=&target_id=` | `{ comments, total }` |
+| `/api/comments` | `POST` | `{ targetType, targetId, authorName, content, email? }` | `{ ok: true, message }` |
+| `/api/views` | `POST` | `{ path, targetType?, targetId? }` | `{ counted }`，无库时 204 |
+
+三个路由均 `export const runtime = 'nodejs'` + `dynamic = 'force-dynamic'`，响应带 `cache-control: no-store`。
+
+**响应恒定形状**：`likes` 永远返回 `{count, liked}`（即使出错也回退到这个形状），前端不必处理多种形态。`comments` POST **不返回内部 `status`**——告诉客户端「你写进了一个 pending 行」只会诱发绕过审核的尝试。
+
+### 10.2 身份与去重
+
+```text
+lib/interactions/server-context.ts  visitor cookie、hashValue、requestFingerprint
+lib/interactions/rate-limit.ts      内存滑动窗口（不是安全边界，代码里已写明三条局限）
+lib/interactions/validators.ts      zod schema，客户端与服务端共用
+lib/interactions/snapshot.ts        详情页服务端预取 { likes, comments, enabled }
+components/interactions/like-button.tsx     乐观更新 + 失败回滚 + aria-pressed
+components/interactions/view-tracker.tsx    keepalive fetch，失败静默，严格模式防双发
+components/interactions/comment-section.tsx 不做乐观插入，字段级错误映射
+```
+
+- 访客标识：`httpOnly` cookie `playbook-visitor`，32 字符 hex，一年有效，生产环境 `secure`；服务端仍按正则校验。
+- 哈希：`sha256(salt + value)`，盐来自 `INTERACTION_HASH_SALT`，未配置时用**进程内随机盐**（不泄漏原始值，但重启后去重与限流效果重置）。前缀区分用途：`ip:`、`ua:`、`email:`、`admin-token:`、`admin-session:`。
+- 不存明文 IP，只存加盐哈希；`referrer` 只保留 `origin`。评论邮箱只存哈希且不对外暴露。
+- 点赞幂等：`insert ... on conflict (target_type, target_id, visitor_id) do nothing`，冲突视作幂等成功并返回权威计数。
+- 浏览量去重：由 `record_page_view` 在单条语句内完成 30 分钟窗口去重，不在应用层「先查后写」。
+
+### 10.3 限流阈值
+
+| 维度 | 阈值 | 键 |
+| --- | --- | --- |
+| 点赞 | 30 次/分钟 | `like:{visitorId}` |
+| 评论 | 5 次/10 分钟 + 20 次/小时 | `comment:ip:{hash}` / `comment:target:{type}:{id}` |
+| 浏览量 | 60 次/分钟 | `view:{visitorId}` |
+| 后台登录 | 3 次/10 分钟 | `admin-login:{emailHash}` |
+
+**这三条局限已写在代码注释里，不当成安全边界**：重启清零、多实例阈值放大、可被绕过。真正的边界是数据库唯一约束与服务端强制 `pending`。
+
+---
+
+## 11. 统计与活跃度
+
+```text
+lib/activity/events.ts             ACTIVITY_EVENT_TYPES（13 个）与 PUBLIC_EVENT_TYPES（8 个）的唯一来源
+components/site/activity-feed.tsx   Server Component；无库时 return null
+scripts/db-aggregate.mjs          每日聚合 / 回填
+```
+
+**事件枚举**：`post_created/updated/published/archived`、`timeline_created/updated/published/archived`、`comment_created/approved/rejected`、`like_created`、`view_milestone_reached`。数据库 check 约束与它逐字对应，`article_*` 与 `view_recorded` 写法已作废。
+
+**幂等**：`activity_events.dedupe_key` + **部分**唯一索引 `where dedupe_key is not null`。`dedupe_key` 为 null 的事件允许重复（无去重键的事件本来就该每条都记）。
+
+- 点赞：`like:{type}:{id}:{visitorId}`（反复取消/重赞不刷屏）。
+- 里程碑：`milestone:{type}:{id}:{milestone}`，档位 10 / 50 / 100 / 500 / 1000。
+- **浏览不进活动流**，只生成里程碑——高频浏览会刷屏。
+
+**每日聚合**用**绝对值 upsert**（`set x = excluded.x`）而非 `+=` 累加，因此重复跑同一天结果一致。`p_date` 为 null 时聚合**昨天**，避免当天数据还在增长导致数字反复变化。`site_daily_stats.posts_count` / `timeline_count` 是**当日新增发布数**（增量），不是累计总数。
+
+**公开活跃列表**只返回 8 种公开事件类型，不含 `comment_created` / `comment_rejected` / `*_archived` / `like_created`，也不返回访客标识。`list_public_activity` 刻意保留 PUBLIC 可执行（它是给匿名访客看的，内部已过滤）；其余 4 个 `security definer` 函数全部 `revoke ... from public`。
+
+---
+
+## 12. 管理后台
+
+```text
+lib/auth/admin.ts               一次性令牌登录 + 会话（只存哈希）+ safeAdminRedirect + 审计
+lib/admin/repository.ts        后台独立仓储（能看全状态，不复用公开端口）
+app/admin/layout.tsx           Server Component 守卫，不渲染任何后台内容即鉴权
+app/admin/login/*              请求链接 / 兑换令牌 / 退出
+app/admin/comments/*           按状态筛选 + 通过/拒绝/删除（form + Server Action）
+app/admin/timeline/*           新建/编辑同表单 upsert + 状态切换
+```
+
+**守卫三分支**（都不渲染后台框架）：
+
+1. 无数据库 → 显示「后台暂不可用」。
+2. 无 `ADMIN_EMAIL` → 显示「后台未配置」。
+3. 未登录 → `redirect('/admin/login?next=/admin')`。
+
+**安全不变量**：
+
+- 不自建密码存储；令牌与会话只存哈希，一次性语义交给数据库的 `where used_at is null`。
+- 白名单来自 `ADMIN_EMAIL`；**未配置时后台整体关闭**（忘记配环境变量不应导致任何人都能进后台）。
+- 对外统一文案，防邮箱枚举。
+- 重定向只允许同源白名单后台路径（拒 `//host`、反斜杠、`..`）。
+- 退出走 POST / Server Action，不用可被预取的 GET 链接。
+- 每个 Server Action **独立鉴权**，不依赖 layout 守卫或 UI 隐藏。
+- 错误边界只显示 `error.digest`，绝不渲染 message / stack / SQL。
+- 全部 `noindex,nofollow`，`robots.ts` 禁止抓取 `/admin`。
+
+**并发审核**：`moderateComment` 带 `expectedStatus` 条件更新（`where id = $1 and status = $4`），两人同时点「批准」只有第一个成功，第二个收到冲突提示而非静默覆盖。
+
+---
+
+## 13. 内容同步（MDX → 数据库）
+
+作者仍用 `content/posts/*.mdx` 写作，因此需要一条显式的「文件 → 数据库」动作：`npm run db:import`。
+
+- 以 slug 为键 upsert；内容未变则跳过（不刷新 `version`）；有变化 `version + 1`。
+- frontmatter 非法直接失败并指出文件，不静默跳过。
+- 事务内先 `set local app.preserve_updated_at = 'on'`，让 `updated_at` 尊重 frontmatter 的编辑日期（见 D-13 缺陷二）。
+- 「内容是否变化」的判定包含 `updated_at`，因此被改坏的日期能自我修复。
+- 阅读时间口径与 `lib/content/repository.ts`、`lib/data/adapters/postgres.ts` 必须一致。
+
+**为什么不做「页面同时猜两个来源」**：那会制造「改了文件但页面没变」的静默不一致，比多跑一条命令更贵。

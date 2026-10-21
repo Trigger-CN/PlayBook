@@ -14,7 +14,10 @@
     "db:migrate": "node scripts/db-migrate.mjs",
     "db:migrate:dry": "node scripts/db-migrate.mjs --dry-run",
     "db:seed": "node scripts/db-migrate.mjs --seed",
-    "db:health": "node scripts/db-health.mjs"
+    "db:health": "node scripts/db-health.mjs",
+    "db:import": "node scripts/db-import-content.mjs",
+    "db:import:dry": "node scripts/db-import-content.mjs --dry-run",
+    "db:aggregate": "node scripts/db-aggregate.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "0.5.2",

@@ -2,10 +2,14 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
+import { CommentSection } from '@/components/interactions/comment-section'
+import { LikeButton } from '@/components/interactions/like-button'
+import { ViewTracker } from '@/components/interactions/view-tracker'
 import { ToyButton } from '@/components/ui/toy-button'
 import { ToyCard } from '@/components/ui/toy-card'
 import { timelineTypeStyles } from '@/config/timeline'
 import { getDataPorts } from '@/lib/data'
+import { loadInteractionSnapshot } from '@/lib/interactions/snapshot'
 import { formatTimelineDate } from '@/lib/timeline/view'
 
 type TimelineDetailProps = {
@@ -49,7 +53,10 @@ export default async function TimelineDetailPage({ params }: TimelineDetailProps
   if (!item) notFound()
 
   const typeStyle = timelineTypeStyles[item.type]
-  const { newer, older } = await ports.timeline.getAdjacent(item.id)
+  const [{ newer, older }, interactions] = await Promise.all([
+    ports.timeline.getAdjacent(item.id),
+    loadInteractionSnapshot('timeline_item', item.id),
+  ])
   const paragraphs = item.content
     .split(/\n{2,}/)
     .map((paragraph) => paragraph.trim())
@@ -58,6 +65,13 @@ export default async function TimelineDetailPage({ params }: TimelineDetailProps
 
   return (
     <article className="pb-6 pt-6">
+      <ViewTracker
+        path={`/timeline/${item.id}`}
+        targetType="timeline_item"
+        targetId={item.id}
+        enabled={interactions.enabled}
+      />
+
       <nav
         aria-label="面包屑"
         className="mb-6 flex flex-wrap items-center gap-2 text-xs font-bold text-[var(--muted)]"
@@ -114,6 +128,15 @@ export default async function TimelineDetailPage({ params }: TimelineDetailProps
         ))}
       </div>
 
+      <div className="mt-8 max-w-[760px] flex flex-wrap items-center gap-4">
+        <LikeButton
+          targetType="timeline_item"
+          targetId={item.id}
+          initial={interactions.likes ?? undefined}
+          enabled={interactions.enabled}
+        />
+      </div>
+
       {item.externalUrl ? (
         <div className="mt-6">
           <ToyButton
@@ -127,6 +150,14 @@ export default async function TimelineDetailPage({ params }: TimelineDetailProps
           {host ? <p className="mt-2 text-xs text-[var(--muted)]">{host}</p> : null}
         </div>
       ) : null}
+
+      <CommentSection
+        targetType="timeline_item"
+        targetId={item.id}
+        initialComments={interactions.comments}
+        initialTotal={interactions.commentTotal}
+        enabled={interactions.enabled}
+      />
 
       <nav aria-label="相邻记录" className="mt-12 flex flex-wrap gap-4">
         {newer ? (

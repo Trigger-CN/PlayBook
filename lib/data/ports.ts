@@ -83,15 +83,46 @@ export type ViewRecordInput = {
   referrer?: string | null
 }
 
+/** 新建评论的写入参数（设计 module 06 §3）。 */
+export type CommentCreateInput = {
+  target: InteractionTargetRef
+  authorName: string
+  content: string
+  /** 只存哈希，不存明文邮箱（module 06 §7）。 */
+  authorEmailHash?: string | null
+  ipHash?: string | null
+  userAgentHash?: string | null
+}
+
+/**
+ * 写入结果。新建评论恒为 pending，不返回内部审核细节（module 06 §6）。
+ */
+export type CommentCreateResult = {
+  id: string
+  status: 'pending'
+}
+
 export type InteractionPort = {
   /** 单目标点赞计数与该访客是否已点赞。 */
   getLikeState(target: InteractionTargetRef, visitorId: string | null): Promise<LikeState>
   /** 批量计数，避免列表页 N+1；无点赞的目标不出现在结果里。 */
   getLikeCounts(type: TargetType, ids: string[]): Promise<Record<string, number>>
+  /** 点赞；重复点赞视作幂等成功，返回权威状态（module 07 §4.2）。 */
+  addLike(
+    target: InteractionTargetRef,
+    visitorId: string,
+    ipHash?: string | null,
+  ): Promise<LikeState>
+  /** 取消点赞；不存在时也返回成功状态，计数不小于 0（module 07 §4.2）。 */
+  removeLike(target: InteractionTargetRef, visitorId: string): Promise<LikeState>
   /** 记录一次浏览；被去重规则拦下时返回 false。 */
   recordView(input: ViewRecordInput): Promise<boolean>
   /** 只返回 approved 的公开评论。 */
   listApprovedComments(target: InteractionTargetRef, limit?: number): Promise<PublicComment[]>
+  /** 已审核通过的评论数（公开统计口径，module 09 §3）。 */
+  countApprovedComments(target: InteractionTargetRef): Promise<number>
+  /** 新建评论；实现必须强制 status = 'pending'。 */
+  createComment(input: CommentCreateInput): Promise<CommentCreateResult>
 }
 
 // ---------------------------------------------------------------------------
@@ -103,9 +134,61 @@ export type ContentTotals = {
   timelineTotal: number
 }
 
+/** 公开统计汇总（设计 module 09 §3：口径固定，页面不直接扫原始表）。 */
+export type SiteTotals = {
+  views: number
+  likes: number
+  comments: number
+  postsTotal: number
+  timelineTotal: number
+}
+
+/** 热门内容项：按浏览或点赞排序。 */
+export type PopularItem = {
+  targetType: TargetType
+  targetId: string
+  count: number
+}
+
 export type StatsPort = {
   /** 累计总量从内容源取，不读每日聚合表（决策 D-07）。 */
   getContentTotals(): Promise<ContentTotals>
+  /** 公开总量：浏览/点赞/评论三项聚合 + 内容数。无数据库时后三项为 0。 */
+  getSiteTotals(): Promise<SiteTotals>
+  /** 按浏览或点赞取热门目标，limit 上限由实现限制。 */
+  listPopular(kind: 'views' | 'likes', limit: number): Promise<PopularItem[]>
+  /** 最近公开活跃事件（module 09 §4：已过滤待审核与访客标识）。 */
+  listRecentActivity(limit: number): Promise<ActivityEntry[]>
+}
+
+// ---------------------------------------------------------------------------
+// 活跃事件
+// ---------------------------------------------------------------------------
+
+/** 公开活跃条目；不含访客标识与内部评分。 */
+export type ActivityEntry = {
+  eventType: string
+  targetType: TargetType | null
+  targetId: string | null
+  title: string | null
+  createdAt: string
+}
+
+export type ActivityPort = {
+  /** 写入一条活动事件；dedupeKey 重复时幂等不重复插入。 */
+  record(input: ActivityRecordInput): Promise<boolean>
+  /** 检查并写入浏览里程碑；未达新里程碑返回 false。 */
+  recordViewMilestone(target: InteractionTargetRef, title?: string | null): Promise<boolean>
+  /** 回填最近 N 天每日聚合，返回实际处理天数。 */
+  backfillDailyStats(days: number): Promise<number>
+}
+
+export type ActivityRecordInput = {
+  eventType: string
+  target?: InteractionTargetRef | null
+  title?: string | null
+  metadata?: Record<string, unknown> | null
+  dedupeKey?: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +200,7 @@ export type DataPorts = {
   timeline: TimelinePort
   interactions: InteractionPort
   stats: StatsPort
+  activity: ActivityPort
   /** 当前生效的实现名，用于日志与调试。 */
   readonly driver: 'file' | 'postgres' | 'supabase'
 }
