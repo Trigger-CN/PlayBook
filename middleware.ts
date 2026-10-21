@@ -48,7 +48,12 @@ export function middleware(request: NextRequest) {
     // 只带 pathname + search，不带完整 URL：避免把外部来源拼进 next 参数，
     // 也避免产生开放重定向的入口。safeAdminRedirect 会再校验一次。
     loginUrl.searchParams.set('next', `${pathname}${search}`)
-    return NextResponse.redirect(loginUrl)
+    const redirectResponse = NextResponse.redirect(loginUrl)
+    // 重定向响应也要带这个头。虽然 307 本身不会被索引，但「后台的所有响应都
+    // 不鼓励抓取」是一条更简单、更难漏的口径 —— 否则一旦将来某个分支忘了加，
+    // 就需要靠人去发现。
+    redirectResponse.headers.set('X-Robots-Tag', 'noindex, nofollow')
+    return redirectResponse
   }
 
   const response = NextResponse.next()

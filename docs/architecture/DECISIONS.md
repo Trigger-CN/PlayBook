@@ -585,3 +585,87 @@ SQL 层 33 项断言全部通过（脚本用与 `lib/admin/repository.ts` 逐字
 - 后台登录的邮件投递仍未接入（无真实邮件通道），开发环境靠登录页回显 `devLink`；本次验证是直接构造会话行，**未走完整的「输邮箱 → 拿链接 → 点链接」流程**
 - 时间轴并发冲突的 UI 反馈（`conflict` 分支的提示文案）只验证了代码路径存在，未构造两人同时保存的真实并发场景
 - 后台移动端仍为可换行列表，未实现设计 08 §2.2 的抽屉（有意的范围裁剪）
+
+---
+
+## D-16 本地 PostgreSQL 环境的提供方式
+
+本机没有原生 PostgreSQL（`psql`、`pg_ctl` 都不在 PATH），而互动、统计、后台都需要真库。本项提供一套「一条命令装好」的本地环境。
+
+**决策一：用 `embedded-postgres` 把官方二进制装进 `.me/pg`，不进项目依赖。**
+
+它是把上游 PostgreSQL 的 `initdb` / `pg_ctl` / `postgres` 装到 `node_modules` 里，**不是模拟器**（实测 PostgreSQL 18.4，SQL 行为与原生库一致）。放在 `.me/`（已在 `.gitignore`）里而不是 `dependencies`：数据库二进制与数据文件都不该进仓库，也不该让每次 `npm install` 都拉一遍。换台机器重跑 `db:setup` 即可。
+
+**决策二：用 `pg_ctl` 托管进程，而不是常驻一个 node 进程。**
+
+之前做验证时用的是「node 里 `new EmbeddedPostgres()` 然后 `process.stdin.resume()`」，那种方式下数据库的生命周期绑在终端上：关窗口实例就没了，而且终端被占住不还提示符。`pg_ctl` 把 postgres 交给操作系统托管，命令立即返回，与装了原生 PostgreSQL 的体验一致。
+
+**决策三：只监听 `127.0.0.1`，口令固定为 `postgres`，并在文档里写明这是本机开发凭据。**
+
+不对外暴露端口；口令不是秘密，而是「本机开发」这一场景的显式声明。文档里同时写明：任何部署环境必须换强口令并设 `DATABASE_SSL=require`。含糊其辞地用一个弱口令反而危险。
+
+**决策四：不创建 `.env.local`，而是把确切内容打印给用户。**
+
+`.env.local` 已被 `.gitignore` 排除，属于用户本地环境。脚本结尾直接输出 `DATABASE_URL` 与 `INTERACTION_HASH_SALT` 两行的确切写法，用户复制粘贴即可，无需猜测格式。
+
+---
+
+## 附：D-16 实现中修掉的三个真实缺陷
+
+这三个都不是产品代码的缺陷，但都属于「成功了却像失败」或「失败了却像成功」，值得记下来。
+
+**缺陷一：`spawn EINVAL`。**
+
+Node 20 起（CVE-2024-27980 修复后）`child_process` 不再允许直接 spawn `.cmd` / `.bat`。`db-setup.mjs` 里 `exec('npm.cmd', ...)` 因此直接失败。修法：加 `shell: isWindows`。参数无空格与特殊字符，不会引入引号拆分风险。
+
+**缺陷二：`pg_ctl start` 在 Windows 上挂住（最危险的一个）。**
+
+它 fork 出的 postgres 子进程继承了 pg_ctl 的 stdout/stderr 管道，于是父进程的 `close` 事件永远不来，`execFile` 的 Promise 不 resolve。现象是：命令看起来卡死、终端不还提示符，**但数据库其实已经起来了**。
+
+这种「成功了却像失败」最难判断——很容易误以为启动失败而反复重试，甚至去删数据目录。修法：
+
+1. `spawn` + `stdio: 'ignore'` 彻底断开输出管道（`detached` + `unref` 让 node 不因子进程而保持存活）；
+2. **用 TCP 端口轮询判断就绪**（`net.Socket` 连 `127.0.0.1:PORT`，800ms 超时，30s 总窗口，400ms 间隔），不依赖 pg_ctl 的退出码——「端口是否在监听」不会说谎。
+
+**缺陷三：平台包只带 `initdb` / `pg_ctl` / `postgres`，没有 `psql` 与 `createdb`。**
+
+`@embedded-postgres/windows-x64/native/bin` 实测只有这三个可执行文件，其余全是 DLL。所以建库不能用 `createdb`。改为用项目自带的 `pg` 客户端连 `postgres` 维护库执行 `create database`：既不依赖外部工具，也避开了「拼 createdb 路径」这类脆弱假设。库名先过 `/^[a-z_][a-z0-9_]{0,62}$/` 白名单（DDL 不接受参数占位符）。
+
+---
+
+## 附：D-16 实测证据
+
+**环境**：Windows，Node v20.16.0，端口 5432，数据目录 `.me/pg/pgdata`，仅监听 127.0.0.1。
+
+**命令逐条实测**：
+
+| 命令 | 输出 |
+| --- | --- |
+| `npm run db:setup` | `已创建数据库 playbook` → `停止实例…` |
+| `npm run db:start` | `已启动：postgres://postgres:postgres@127.0.0.1:5432/playbook`（**立即返回**） |
+| `npm run db:stop` | `已停止` |
+| `npm run db:migrate` | 9 个迁移应用，`000002_rls_policies` 按设计跳过 |
+| `npm run db:import` | `新增 1，更新 0，跳过 0` |
+| `npm run db:health` | `连接成功，耗时 117 ms`、`PostgreSQL 18.4`、`已应用迁移 9 个`、`schema 自检通过` |
+
+**端到端 32/32 断言全部通过**（真实 HTTP 打 `npm run dev`，真实库查证）：
+
+- 文章详情页 200 且正文来自 `posts.body`；页面**不再出现**「评论功能需要数据库支持」
+- 浏览量：首次 `counted=true` 且 `page_views` 行数 +1；同访客重复上报 `counted=false`（30 分钟去重生效）
+- 点赞：`count` 增加且 `liked=true`；重复点赞 `count` 不变（幂等）；同一访客在 `likes` 表只有一行（唯一约束）；`DELETE` 后 `liked=false`
+- 评论：返回 **201**、消息含「审核」、`comments` 行数 +1、状态 `pending`、`author_email_hash` 非空、**库里查不到明文邮箱**、待审核评论不出现在公开页
+- 校验：超长评论 400、非法 `targetType` 400、不存在的目标 404、非站内 `path` 400
+- 首页/统计页/时间轴 200；首页不再出现「配置 DATABASE_URL 后可用」；统计页不再出现「文件模式没有每日聚合表」
+- `/admin` 未登录 307 + `next=%2Fadmin` + `X-Robots-Tag: noindex, nofollow`
+- 有库 `typecheck` exit 0、`build` exit 0，路由表与无库时**完全一致**（26/26 静态页、`/stats` 15m、`/rss.xml` 1h、`/posts/[slug]` 与 `/timeline/[id]` 为 `●`、`/admin/*` 与 `/api/*` 为 `ƒ`）
+
+**顺带修掉的一个产品缺陷**：`middleware.ts` 的重定向分支没有带 `X-Robots-Tag`——只有 `NextResponse.next()` 分支带了。文档声称「给后台响应补这个头」，但未登录访问 `/admin` 的那个 307 缺了。虽然 307 本身不会被索引，但「后台所有响应都不鼓励抓取」是更简单、更难漏的口径。已修。
+
+**接口字段命名的不对称（实测得出，不是笔误）**：POST / DELETE 的 JSON body 用 camelCase（`targetType` / `targetId` / `authorName` / `authorEmail`），而 `GET /api/likes` 的 query 用 snake_case（`target_type` / `target_id`）。两者都由服务端 zod schema 强制，传错会被 400 拒绝。
+
+**未验证范围**：
+
+- 只在 Windows x64 上验证过。`findBinDir()` 按 `@embedded-postgres/*` 子目录探测 `pg_ctl`（不硬编码平台名），但 macOS / Linux 未实测
+- 未验证「关掉终端后实例继续运行」的跨会话持久性（只验证了命令立即返回且端口监听）
+- 未验证开机自启（本项不提供，需用户自己把 `db:start` 加进启动项）
+- 未验证数据目录在磁盘满 / 异常断电后的恢复能力

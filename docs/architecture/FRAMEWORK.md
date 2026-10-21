@@ -1,6 +1,6 @@
 # 底层框架说明
 
-描述当前已落地的工程骨架与模块边界，供后续开发直接遵循。基线决策见 [DECISIONS.md](DECISIONS.md)。
+描述当前已落地的工程骨架与模块边界，供后续开发直接遵循。基线决策见 [DECISIONS.md](DECISIONS.md)；本地数据库的安装与启停见 [../LOCAL_DATABASE.md](../LOCAL_DATABASE.md)。
 
 技术栈：Next.js 15 App Router · React 19 · TypeScript 5.9（strict）· Tailwind CSS 3.4 · MDX · Supabase（Phase 5 起启用）。
 
@@ -21,6 +21,7 @@ lib/admin/          后台仓储、活动写入与审计（不对外暴露）
 lib/timeline/       时间轴领域（类型 → 视图 → 种子仓库）
 lib/supabase/       数据访问客户端
 content/posts/      MDX 正文（MVP 真实来源）
+scripts/           迁移、导入、聚合、自检、本地库 setup/start/stop
 docs/architecture/  决策与框架说明
 ```
 
