@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { href: '/admin/comments', label: '评论' },
   { href: '/admin/timeline', label: '时间轴' },
   { href: '/admin/analytics', label: '分析' },
+  { href: '/admin/activity', label: '活动日志' },
 ] as const
 
 export function AdminNav() {

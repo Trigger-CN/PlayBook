@@ -28,7 +28,19 @@ const STATUS_LABELS: Record<string, string> = {
   archived: '已归档',
 }
 
-export default async function AdminPostsPage() {
+const POST_STATUSES = ['draft', 'published', 'archived'] as const
+
+function normalizeStatus(raw: string | undefined): string | undefined {
+  return raw && (POST_STATUSES as readonly string[]).includes(raw) ? raw : undefined
+}
+
+type Props = {
+  searchParams: Promise<{ status?: string }>
+}
+
+export default async function AdminPostsPage({ searchParams }: Props) {
+  const { status: statusParam } = await searchParams
+  const status = normalizeStatus(statusParam)
   const dbEnabled = hasDatabaseUrl()
 
   if (!dbEnabled) {
@@ -50,7 +62,7 @@ export default async function AdminPostsPage() {
     )
   }
 
-  const posts = await listPostsForAdmin()
+  const posts = await listPostsForAdmin({ status: status ?? null })
   const bySource = {
     db: posts.filter((post) => post.source === 'db').length,
     file: posts.filter((post) => post.source === 'file').length,
@@ -66,14 +78,55 @@ export default async function AdminPostsPage() {
         </p>
       </header>
 
+      {/*
+        状态筛选写进 query：仪表盘的「N 篇文章仍是草稿」待办条会直接链到
+        ?status=draft，这里必须能接住它并保持可恢复（刷新后仍在筛选态）。
+      */}
+      <nav aria-label="按状态筛选" className="mb-4 flex flex-wrap gap-1.5">
+        <Link
+          href="/admin/posts"
+          aria-current={status ? undefined : 'page'}
+          className="rounded-full px-3 py-1.5 text-xs font-extrabold"
+          style={{
+            background: status ? 'var(--surface)' : 'var(--ink)',
+            color: status ? 'var(--muted)' : 'var(--canvas)',
+            border: '1px solid var(--line)',
+          }}
+        >
+          全部
+        </Link>
+        {POST_STATUSES.map((value) => {
+          const active = value === status
+          return (
+            <Link
+              key={value}
+              href={`/admin/posts?status=${value}`}
+              aria-current={active ? 'page' : undefined}
+              className="rounded-full px-3 py-1.5 text-xs font-extrabold"
+              style={{
+                background: active ? 'var(--ink)' : 'var(--surface)',
+                color: active ? 'var(--canvas)' : 'var(--muted)',
+                border: '1px solid var(--line)',
+              }}
+            >
+              {STATUS_LABELS[value] ?? value}
+            </Link>
+          )
+        })}
+      </nav>
+
       {posts.length === 0 ? (
         <div
           className="rounded-2xl border-2 border-dashed p-8 text-center"
           style={{ borderColor: 'var(--line)', background: 'var(--soft)' }}
         >
-          <p className="text-sm font-bold">还没有文章</p>
+          <p className="text-sm font-bold">
+            {status ? `没有${STATUS_LABELS[status] ?? status}的文章` : '还没有文章'}
+          </p>
           <p className="mt-2 text-sm text-[var(--muted)]">
-            在 content/posts/ 下新建 .mdx 后执行 npm run db:import 即可入库。
+            {status
+              ? '换个状态筛选看看，或清除筛选查看全部。'
+              : '在 content/posts/ 下新建 .mdx 后执行 npm run db:import 即可入库。'}
           </p>
         </div>
       ) : (

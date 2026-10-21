@@ -473,3 +473,115 @@ docs/architecture/       架构决策与框架说明
 - `middleware.ts` 只在 `next start` 下做了真实 HTTP 验证，未在 Edge 生产环境（Vercel / Cloudflare）验证运行时兼容性
 - RSS 未用真实 feed 阅读器验证渲染效果，只验证了 XML 结构与响应头
 - 后台分析页的图表视觉未做截图验证，只验证了 HTML 结构与数字正确性
+
+---
+
+## D-15 后台活动日志、审核队列与时间轴管理的收尾
+
+本项把 Phase 8 从「能看能改」推到「说得清发生了什么」。核心是一个**真实功能缺陷**：活动事件从未被写入。
+
+**缺陷**：全仓搜索 `activity.record` 只有两处调用（`app/api/likes`、`app/api/views`）。时间轴发布与评论审核通过**完全不写** `activity_events`。后果是公开首页的「最近活跃」只能看到点赞里程碑，Phase 7 的活跃流基本是空的。而迁移 `000010` 刚修好的 `record_activity`（部分唯一索引匹配问题）因此几乎从未被调用过——**修好了一个没人用的函数**。
+
+**决策一：活动写入复用端口层 `ports.activity.record`，不另写一套 SQL。**
+
+`lib/admin/repository.ts` 存在的理由是「后台需要看到公开端口看不到的状态」；写活动事件不需要额外可见性，它就是把一条公开事实记进流水。一套幂等逻辑维护两遍必然漂移。新增 `lib/admin/activity.ts` 作为唯一入口：`writeActivity()` 返回 `'recorded' | 'duplicate' | 'skipped' | 'failed'`，`driver === 'file'` 时返回 `skipped` 而非抛错（后台本身有 `hasDatabaseUrl` 守卫，调用方不该因为「当前没配数据库」让写操作失败）。
+
+**失败时不写日志**：活动事件里可能含内容标题，写日志反而扩大暴露面。但保留 boolean 返回值供观测——`record_activity` 曾经静默失效过一次，那次教训是「吞错误必须有可观测的出口」。
+
+**决策二：时间轴的三种事件分开记，不一律记 created。**
+
+| 动作 | 事件 |
+| --- | --- |
+| 新建节点 | `timeline_created` |
+| 编辑已有节点 | `timeline_updated` |
+| 从非发布切到发布 | `timeline_published` |
+| 下线（归档） | `timeline_archived` |
+
+一律记 created 会让公开活跃流里出现一堆「创建」，读者无法分辨哪些是真正的新内容。发布事件只在 `previousStatus !== 'published'` 时写，并带 `dedupeKey: timeline_published:${id}`——反复改字段不该刷屏成十条「发布了」。
+
+**决策三：评论审核的事件映射，删除不记事件。**
+
+- `approved` → `comment_approved`（公开可见，进公开活跃流）
+- `rejected` → `comment_rejected`（**不进**公开流，但后台日志要能看到）
+- `deleted` → **不记**：删除是清理动作，不是「发生过什么」
+
+**决策四：只归档、不物理删除。**
+
+设计 11 §3.3 要求「删除前显示关联评论/点赞数量；默认归档或软删除」。这里只做归档（`status → archived`），因为 D-06 明确互动表**不设外键**——物理删除会留下孤儿评论与点赞，数据库不会替我们拦住。真正的永久删除需要独立的确认流程，本页不提供：一个「点了就没了」的按钮在后台是最容易造成不可恢复损失的东西。下线按钮上直接写出会影响多少条互动。
+
+**决策五：`hasEmail` 是元信息，不是邮箱。**
+
+设计 12 §3 要求「邮箱只显示掩码或不显示」。数据库里存的是哈希，本来就没有明文可显示。因此后台返回的是「是否留了邮箱」这一布尔元信息，页面上是一个「留了邮箱」徽标。**哈希本身绝不返回、绝不渲染。**
+
+**决策六：目标标题用 LEFT JOIN 取，orphan 必须能显示。**
+
+`comments.target_id` 是「公开路由上可寻址的字符串」（文章用 slug、时间轴用 `timeline_items.id`）。后台队列用 `left join posts on target_type='post' and slug=target_id`、`left join timeline_items on target_type='timeline_item' and id=target_id` 取标题，取不到就是 `null`。这不是防御性冗余——互动表不设外键，目标被删后评论还在，这种行**确实会存在**，页面必须显示「目标已不存在」而不是崩掉或显示一个会 404 的链接。
+
+**决策七：审核页默认进入 `pending`，操作后保留筛选。**
+
+「没传 `status` 参数」的语义是「我刚打开这个页面」，而打开这个页面最可能想做的事是处理待审核。默认 `all` 会让待审核混在已处理里，每次都要先筛一次。`returnTo` 隐藏字段保留当前筛选——审核完一条就跳回「全部」会丢掉队列上下文。`returnTo` 是客户端可改的，因此必须白名单到 `/admin/comments` 前缀并拒 `//`、`\`、`..`，否则这里就是开放重定向入口。
+
+**决策八：时间轴筛选写进 query，编辑用版本戳做乐观并发。**
+
+筛选条件（type / status / year / q）全部写进 query 而不是存在组件状态里：刷新、返回、从编辑态回来都还能保持视图。年份筛选用 `extract(year from occurred_at) = $n` 而不是 `occurred_at::text like '2026%'`（后者无法用索引，且依赖隐式格式化）。
+
+编辑回填（`?edit=<id>`）带 `expectedUpdatedAt`（`YYYY-MM-DD HH24:MI:SS` 版本戳）。两人同时编辑同一节点时，后保存的那个收到 `conflict` 而不是静默覆盖——设计 11 §4 的明确要求。**编辑态锁定 ID**：ID 是公开地址与互动目标键，改名等于换了一个目标。
+
+**决策九：批量取互动计数，不做 N+1。**
+
+列表每行都要显示「N 条评论 / M 个赞」，逐行调 `getTargetInteractionCounts` 就是 N+1 查询。改为 `listTimelineInteractionCounts(ids)`：`unnest($1::text[])` 加两个 `left join ... group by`。用 left join 而不是 inner join，是为了让**没有互动的节点返回 0 而不是从结果里消失**——后者会让页面上的数字随机缺行。
+
+**决策十：活动日志页不复用 `list_public_activity`。**
+
+那个 SQL 函数内部已按公开事件白名单过滤，只返回 8 种。后台日志页的意义恰恰在于能看到 `comment_created`、`comment_rejected`、`*_archived`、`like_created` 这些不进公开流的事件——用它做后台日志会得到一份「和公开页一样少」的列表。因此新增 `listActivityLog()` 直查 `activity_events`。
+
+**不返回 `metadata`**：里面可能有访客标识与 UA 的哈希。日志页不需要它们，下发即是无意义的暴露面。
+
+页面上用 `isPublicActivityEvent()` 给每条打「公开 / 内部」徽标，并在末尾写明「带公开标记的会出现在首页最近活跃；不带标记的只在这里可见」——否则会有人以为「我在这里看到拒绝记录，为什么读者看不到」是 bug。
+
+**决策十一：仪表盘的待办条直接链到筛选结果。**
+
+待办只列真正需要动作的项（待审核评论、草稿文章、未发布节点），0 项时整条不显示而不是显示一排「0」——后者每次都要读一遍才确认没事可做。每项链接都带 status query（`/admin/comments?status=pending`、`/admin/posts?status=draft`、`/admin/timeline?status=draft`），点进去就是那份列表，不需要再手动筛一次。这要求 `/admin/posts` 支持 `status` 筛选，本项一并加上。
+
+**决策十二：`upsertTimelineItem` 保留首次发布时间。**
+
+`on conflict do update` 里 `published_at` 改为 `case when excluded.status='published' then coalesce(timeline_items.published_at, excluded.published_at) else timeline_items.published_at end`。原实现直接用 `excluded.published_at`，导致改个错字重存就把「发布于」改成 `occurred_at`——与缺陷二（`updated_at` 被导入时刻覆盖）同类的信息丢失。
+
+---
+
+## 附：D-15 实测证据
+
+**真实 PostgreSQL 18.4（embedded-postgres，端口 55481，`TimeZone = Asia/Shanghai`）**，迁移应用 000001/000003–000010（000002 按设计跳过），`db:import` 导入 1 篇文章。
+
+SQL 层 33 项断言全部通过（脚本用与 `lib/admin/repository.ts` 逐字相同的 SQL 片段）：
+
+- **评论队列**：文章评论取到标题「把个人网站做成一台可玩的记录机」；时间轴评论取到「验证节点 A」；孤儿评论 `target_title` 为 `null`；`has_email` 分别为 true / false
+- **批量互动计数**：`verify-node-a` = 1 评论 / 2 赞；无互动的节点返回 `{comments:0, likes:0}` 而非缺行
+- **时间轴筛选**：`extract(year from occurred_at) = 2026` 只命中 2026 的节点；关键字 `ilike` 命中标题
+- **published_at 保留**：把已发布节点的 `published_at` 设为 `2026-07-17 00:00:00+08` 后「改错字」式重存，`to_char(...,'YYYY-MM-DD HH24:MI:SS')` 仍为 `2026-07-17 00:00:00`；`occurred_at` 仍为纯日期 `2026-07-17`，无漂移
+- **活动事件**：`timeline_created` 无 dedupeKey 时两次调用都返回 `true`；`timeline_published` / `comment_approved` 带 dedupeKey 时首次 `true`、重复 `false`；`comment_rejected` / `timeline_archived` 写入成功；非法类型 `article_created` 被 `activity_events_type_check` 拒绝
+- **后台日志 vs 公开流**：后台全量能看到 `comment_rejected` 与 `timeline_archived`；`list_public_activity(50)` 里这两类**都不出现**，只出现 `timeline_created` / `timeline_published` / `comment_approved`；公开流不返回 `visitor_id`；后台日志行字段只有 `id,event_type,target_type,target_id,title,created_at`（**无 metadata**）
+- **并发审核**：`where id=$1 and status=$4` 第一次更新成功、第二次（expectedStatus 仍为 pending）返回 0 行，不覆盖
+
+后台页面 50 项断言全部通过（用真实会话 cookie 请求 `next start`；会话行按 `sha256(salt + 'admin-session:' + token)` 直接写入 `admin_sessions`，与 `lib/auth/admin.ts` 的 `hashValue` 同构）：
+
+- 8 个后台页面（`/admin`、`/admin/activity`、`/admin/comments?status=pending|all`、`/admin/timeline`、`/admin/timeline?status=draft`、`/admin/posts?status=published`、`/admin/analytics`）全部 **200**、含关键文案、带 `X-Robots-Tag: noindex, nofollow`、**不含 `postgres://` / 盐 / `INTERACTION_HASH_SALT`**
+- 活动日志页真实显示出本轮写入的「评论通过」「评论被拒绝」「发布时间轴节点」「下线时间轴节点」，公开/内部徽标区分正确，**不渲染 metadata 哈希**
+- 评论页**无参数时默认进入待审核**；显示 orphan 标记「目标已不存在」；显示「留了邮箱」徽标；显示目标标题而非裸 id；**不渲染邮箱哈希**
+- 时间轴 `?edit=verify-node-a` 回填表单（「编辑节点」标题、`expectedUpdatedAt` 隐藏字段、列表互动计数）
+- 仪表盘出现待办条且链接为 `/admin/comments?status=pending`，最近内容变更与最近评论区块都在
+
+**构建与产物**：
+
+- 无 `DATABASE_URL`：`typecheck` exit=0，`build` exit=0，**26/26 静态页**；`/stats` 为 `○` + 15m，`/rss.xml` 为 `○` + 1h，`/posts/[slug]` 与 `/timeline/[id]` 保持 `●`，`/admin/*`（含新增 `/admin/activity`）与 `/api/*` 为 `ƒ`；First Load JS 共享 103 kB；Middleware 34.2 kB
+- 有 `DATABASE_URL`：`build` exit=0，路由类型与无库时一致，SSG 预渲染路径随库内内容变化
+- 泄漏扫描：`sensitive_in_static=1`，唯一命中 `277-849c6e014d7fb41d.js :: DATABASE_URL`——`like-button.tsx` 无库时展示给用户的文案「配置 DATABASE_URL 后可用」，纯字符串字面量，不含连接串、密码、盐或邮箱。其余敏感项 0 命中
+- `%TSD` 加密扫描：`encrypted_count=0`
+- 未登录 `/admin/activity` → **307** 跳 `/admin/login`；`/admin/login` 带 `X-Robots-Tag: noindex, nofollow`
+
+**未验证范围**：
+
+- 活动事件写入的浏览器端全流程（真实点击「通过」「保存」）未做，只验证了 Server Action 调用的 SQL 语义与页面渲染结果——即「写入逻辑正确」与「页面能显示」两头都有证据，中间那一跳靠的是 Next.js 的 Server Action 机制
+- 后台登录的邮件投递仍未接入（无真实邮件通道），开发环境靠登录页回显 `devLink`；本次验证是直接构造会话行，**未走完整的「输邮箱 → 拿链接 → 点链接」流程**
+- 时间轴并发冲突的 UI 反馈（`conflict` 分支的提示文案）只验证了代码路径存在，未构造两人同时保存的真实并发场景
+- 后台移动端仍为可换行列表，未实现设计 08 §2.2 的抽屉（有意的范围裁剪）

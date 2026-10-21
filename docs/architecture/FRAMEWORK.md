@@ -17,6 +17,7 @@ lib/content/        内容管线（schema → repository → toc / mdx）
 lib/interactions/   互动领域契约与校验器
 lib/cache/          缓存 tag 与失效矩阵
 lib/activity/       活动事件枚举
+lib/admin/          后台仓储、活动写入与审计（不对外暴露）
 lib/timeline/       时间轴领域（类型 → 视图 → 种子仓库）
 lib/supabase/       数据访问客户端
 content/posts/      MDX 正文（MVP 真实来源）
@@ -409,3 +410,115 @@ app/admin/analytics/page.tsx   后台分析，7/30/90 天窗口
 **它不是安全边界**：Edge 运行时无法查库，只能验 cookie 存在性，不能验有效性。真正授权在 `app/admin/layout.tsx` 的 `requireAdmin()` 与每个 Server Action。
 
 不能在 middleware 里 import `lib/auth/admin.ts`（带 `server-only` 且依赖 `pg` / `node:crypto`，会构建失败），因此 cookie 名在 middleware 里重复写一次并注释指向唯一来源。
+
+---
+
+## 16. 后台活动日志与审核队列（D-15）
+
+本项补齐 Phase 8 剩下的交付项，并修掉一个真实功能缺陷：**活动事件从未被写入**。
+
+### 16.1 活动写入的唯一入口
+
+`lib/admin/activity.ts`：
+
+```ts
+export async function writeActivity(input: {
+  eventType: ActivityEventType
+  target?: InteractionTargetRef | null
+  title?: string | null
+  metadata?: Record<string, unknown> | null
+  dedupeKey?: string | null
+}): Promise<'recorded' | 'duplicate' | 'skipped' | 'failed'>
+```
+
+复用 `ports.activity.record`，不另写一套 SQL——admin 仓储存在的理由是「看到公开端口看不到的状态」，而写活动事件不需要额外可见性。
+
+`driver === 'file'` 时返回 `'skipped'` 而非抛错：后台本身有 `hasDatabaseUrl` 守卫，调用方不该因为「当前没配数据库」让写操作失败。
+
+**失败时不写日志**（活动事件里可能含标题，写日志反而扩大暴露面），但保留 boolean 返回值供观测——`record_activity` 曾经因 `on conflict` 匹配不上部分唯一索引而静默失效过，那次教训是「吞错误必须有可观测出口」。
+
+两个映射函数：
+
+| 函数 | 输入 | 输出 |
+| --- | --- | --- |
+| `timelineSaveEventType(created)` | `true` / `false` | `timeline_created` / `timeline_updated` |
+| `commentModerationEventType(status)` | `approved` / `rejected` / `deleted` | `comment_approved` / `comment_rejected` / `null` |
+
+评论**删除不记事件**：删除是清理动作，不是「发生过什么」。
+
+### 16.2 时间轴的四种事件
+
+| 动作 | 事件 | 备注 |
+| --- | --- | --- |
+| 新建 | `timeline_created` | |
+| 编辑 | `timeline_updated` | 只在「真的已存在」时 |
+| 从非发布切到发布 | `timeline_published` | 带 `dedupeKey: timeline_published:${id}` |
+| 下线 | `timeline_archived` | 带 `dedupeKey: timeline_archived:${id}` |
+
+发布事件只在 `previousStatus !== 'published'` 时写。一律记 created 会让公开活跃流里出现一堆「创建」，读者无法分辨哪些是真正的新内容。
+
+### 16.3 只归档、不物理删除
+
+设计 11 §3.3 要求「删除前显示关联评论/点赞数量；默认归档或软删除」。这里只做归档（`status → archived`），因为 D-06 明确互动表**不设外键**——物理删除会留下孤儿评论与点赞，数据库不会替我们拦住。
+
+下线按钮上直接写出影响面：「下线（3 评论 / 12 赞）」。
+
+### 16.4 评论审核队列
+
+- **默认进入 `pending`**：没传 `status` 参数的语义是「我刚打开这个页面」，而打开它最可能想做的事是处理待审核。只有显式 `?status=all` 才看全部。
+- **目标标题而非裸 id**：`left join posts on target_type='post' and slug=target_id`、`left join timeline_items on target_type='timeline_item' and id=target_id`，取不到就是 `null` → 显示「目标已不存在」。互动表不设外键，这种行确实会存在。
+- **`hasEmail` 是元信息**：库里只存哈希，本来就没有明文；页面显示「留了邮箱」徽标，**哈希绝不返回、绝不渲染**。
+- **`returnTo` 保留筛选**：白名单到 `/admin/comments` 前缀，拒 `//`、反斜杠、`..`，否则就是开放重定向入口。
+
+### 16.5 时间轴管理
+
+筛选（type / status / year / q）全部写进 query 而不是组件状态：刷新、返回、从编辑态回来都还能保持视图。年份用 `extract(year from occurred_at) = $n`，不用 `::text like '2026%'`（后者无法用索引）。
+
+`?edit=<id>` 回填表单并带 `expectedUpdatedAt`（`YYYY-MM-DD HH24:MI:SS`）。版本不符时 `upsertTimelineItem` 返回 `{ ok: false, conflict: true }`，不覆盖——设计 11 §4 的明确要求。**编辑态锁定 ID**：ID 是公开地址与互动目标键。
+
+列表的互动计数用 `listTimelineInteractionCounts(ids)` 一次取完（`unnest($1::text[])` + 两个 `left join ... group by`），不做 N+1。用 left join 是为了让没有互动的节点返回 0 而不是从结果中消失。
+
+### 16.6 活动日志页 `/admin/activity`
+
+**不复用 `list_public_activity`**：那个 SQL 函数内部已按公开事件白名单过滤，只返回 8 种。后台日志页的意义恰恰在于能看到 `comment_created`、`comment_rejected`、`*_archived`、`like_created` 这些不进公开流的事件。
+
+**不返回 `metadata`**：里面可能有访客标识与 UA 的哈希，日志页不需要它们。
+
+页面结构：13 种事件类型的筛选（带每条计数，0 条的事件用透明度表明当前为空）→ 事件列表（类型标签 + 公开/内部徽标 + 目标链接 + 时间）→ 末尾图例。
+
+图例明确写出「带公开标记的会出现在首页最近活跃；不带标记的只在这里可见」，否则会有人以为「我在这里看到拒绝记录，为什么读者看不到」是 bug。
+
+### 16.7 仪表盘与文章筛选
+
+待办条只列真正需要动作的项（待审核评论、草稿文章、未发布节点），0 项时整条不显示而不是显示一排「0」。每项链接带 status query，点进去就是那份列表：
+
+```
+/admin/comments?status=pending
+/admin/posts?status=draft
+/admin/timeline?status=draft
+```
+
+其余区块：8 个 StatBlock、4 个快捷操作、最近内容变更（只过滤 `post_*` / `timeline_*`，点赞与里程碑是访客行为不该淹没编辑动作）、最近评论、最近操作（审计日志，并说明与公开活动流是两回事）。
+
+`/admin/posts` 因此支持 `?status=` 筛选；`listPostsForAdmin({ status })` 参数化拼装。
+
+### 16.8 一个顺带修掉的信息丢失
+
+`upsertTimelineItem` 的 `on conflict do update` 原实现直接写 `published_at = excluded.published_at`，导致改个错字重存就把「发布于」改成 `occurred_at`。改为：
+
+```sql
+published_at = case
+  when excluded.status = 'published'
+    then coalesce(public.timeline_items.published_at, excluded.published_at)
+  else public.timeline_items.published_at
+end
+```
+
+与缺陷二（`updated_at` 被导入时刻覆盖）同类：一个字段代表「真实发生过的时刻」，就不该因为再次保存而被重写。
+
+### 16.9 本轮验证
+
+- 真实 PostgreSQL 18.4（端口 55481）：SQL 层 **33/33** 断言通过（评论标题/orphan/hasEmail、批量计数、年份筛选、published_at 保留、活动事件幂等、公开流过滤、并发审核、仪表盘计数）
+- 后台页面：**50/50** 断言通过（8 个页面 200 + 关键文案 + `X-Robots-Tag` + 无敏感串；活动日志显示新写入事件并区分公开/内部；评论页默认 pending + orphan + 邮箱徽标；时间轴编辑回填；仪表盘待办链接）
+- 无库 `build` 26/26 静态页；有库 `build` 同样通过；泄漏扫描 `sensitive_in_static=1`（已定性的用户文案）；`%TSD` 扫描 0 命中
+- 完整证据见 `DECISIONS.md` 附录「D-15 实测证据」
