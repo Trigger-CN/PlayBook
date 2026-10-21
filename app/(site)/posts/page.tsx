@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { ToyButton } from '@/components/ui/toy-button'
-import { filePostRepository } from '@/lib/content/repository'
+import { getDataPorts } from '@/lib/data'
 
 type SearchParams = Promise<{ q?: string; tag?: string; category?: string; sort?: string; page?: string }>
 
@@ -15,7 +15,10 @@ export default async function PostsPage({ searchParams }: { searchParams: Search
   const params = await searchParams
   const page = params.page ? Number(params.page) : 1
 
-  const result = await filePostRepository.list({
+  // 必须经端口层：有 DATABASE_URL 时文章在数据库里，直接读文件会漏掉仅存在于库的文章。
+  const ports = getDataPorts()
+
+  const result = await ports.posts.list({
     q: params.q,
     tag: params.tag,
     category: params.category,
@@ -24,10 +27,7 @@ export default async function PostsPage({ searchParams }: { searchParams: Search
     page: Number.isFinite(page) ? page : 1,
   })
 
-  const [tags, categories] = await Promise.all([
-    filePostRepository.listTags(),
-    filePostRepository.listCategories(),
-  ])
+  const [tags, categories] = await Promise.all([ports.posts.listTags(), ports.posts.listCategories()])
 
   // 无效页码统一走 404，避免产生重复可索引页面（设计 02 §3.4）
   if (params.page && result.items.length === 0 && result.total > 0) notFound()

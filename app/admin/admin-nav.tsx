@@ -14,8 +14,10 @@ import { usePathname } from 'next/navigation'
 
 const NAV_ITEMS = [
   { href: '/admin', label: '概览' },
+  { href: '/admin/posts', label: '文章' },
   { href: '/admin/comments', label: '评论' },
   { href: '/admin/timeline', label: '时间轴' },
+  { href: '/admin/analytics', label: '分析' },
 ] as const
 
 export function AdminNav() {

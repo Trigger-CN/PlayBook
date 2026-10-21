@@ -7,12 +7,16 @@ import type { DataPorts } from './ports'
 export type { DataPorts } from './ports'
 export type {
   ContentTotals,
+  DailyStatPoint,
   InteractionPort,
   InteractionTargetRef,
+  PopularItem,
   PostDetail,
   PostPort,
   PostQuery,
   PostQueryResult,
+  PublicStats,
+  SiteTotals,
   StatsPort,
   TimelinePort,
   ViewRecordInput,

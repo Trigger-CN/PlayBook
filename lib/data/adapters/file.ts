@@ -88,6 +88,10 @@ export const filePorts: DataPorts = {
     },
     listPopular: async () => [],
     listRecentActivity: async () => [],
+    // 文件模式没有每日聚合表，因此序列恒为空、聚合日期恒为 null。
+    // 返回空数组而不是造一条全零序列：后者会被误读为「那几天真的没人看」。
+    getDailySeries: async () => [],
+    getLastAggregatedDate: async () => null,
   },
 
   activity: {

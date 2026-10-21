@@ -485,6 +485,45 @@ export const postgresPorts: DataPorts = {
         createdAt: row.created_at.toISOString(),
       }))
     },
+
+    /**
+     * 近 N 天每日聚合序列。
+     *
+     * 只读 site_daily_stats 聚合表，不扫原始 page_views / likes / comments
+     * （module 09 §5、§7）。日期由 SQL 侧 to_char 格式化 —— date 列直接取值
+     * 会被 pg 解析成带时区的 Date，再 toISOString().slice(0,10) 会少一天。
+     */
+    getDailySeries: async (days) => {
+      const capped = Math.min(Math.max(1, Math.floor(days)), 365)
+      const rows = await query<{
+        date: string
+        views_count: number
+        likes_count: number
+        comments_count: number
+      }>(
+        `select to_char(date, 'YYYY-MM-DD') as date,
+                views_count, likes_count, comments_count
+           from public.site_daily_stats
+          where date >= current_date - ($1::int - 1)
+          order by date asc`,
+        [capped],
+      )
+      return rows.map((row) => ({
+        date: row.date,
+        views: Number(row.views_count),
+        likes: Number(row.likes_count),
+        comments: Number(row.comments_count),
+      }))
+    },
+
+    /** 最后聚合日期。max(date) 是 date 列，同样经 to_char 取值。 */
+    getLastAggregatedDate: async () => {
+      const rows = await query<{ last_date: string | null }>(
+        `select to_char(max(date), 'YYYY-MM-DD') as last_date from public.site_daily_stats`,
+      )
+      return rows[0]?.last_date ?? null
+      return rows[0]?.last_date ?? null
+    },
   },
 
   activity: {

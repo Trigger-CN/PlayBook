@@ -316,3 +316,133 @@ export async function listAuditLog(limit = 50): Promise<AuditRow[]> {
     createdAt: row.created_at.toISOString(),
   }))
 }
+
+// ---------------------------------------------------------------------------
+// 文章索引（设计 10-admin-posts）
+// ---------------------------------------------------------------------------
+
+/**
+ * 后台文章行。
+ *
+ * 与公开端口的区别：公开端口只返回 published，后台需要看到 draft / archived，
+ * 并且要能区分 `source` 是 `file` 还是 `db` —— 这决定正文在哪里修改
+ * （file → 改 MDX 后跑 db:import；db → 已可直接在库内编辑）。
+ */
+export type AdminPostRow = {
+  slug: string
+  title: string
+  summary: string
+  status: string
+  source: string
+  category: string | null
+  tags: string[]
+  featured: boolean
+  version: number
+  publishedAt: string | null
+  updatedAt: string | null
+}
+  
+export async function listPostsForAdmin(): Promise<AdminPostRow[]> {
+  const rows = await query<{
+    slug: string
+    title: string
+    summary: string | null
+    status: string
+    source: string
+    category: string | null
+    tags: string[]
+    featured: boolean
+    version: number
+    published_at: string | null
+    updated_at: string | null
+  }>(
+    `select slug, title, summary, status, source, category, tags, featured, version,
+            to_char(published_at,'YYYY-MM-DD') as published_at,
+            to_char(updated_at,'YYYY-MM-DD') as updated_at
+       from public.posts
+      order by coalesce(updated_at, published_at) desc nulls last, slug asc`,
+  )
+
+  return rows.map((row) => ({
+    slug: row.slug,
+    title: row.title,
+    summary: row.summary ?? '',
+    status: row.status,
+    source: row.source,
+    category: row.category,
+    tags: row.tags ?? [],
+    featured: row.featured,
+    version: Number(row.version),
+    publishedAt: row.published_at,
+    updatedAt: row.updated_at,
+  }))
+}
+
+// ---------------------------------------------------------------------------
+// 分析（设计 13-admin-analytics）
+// ---------------------------------------------------------------------------
+
+/** 后台分析页的聚合快照。 */
+export type AdminAnalytics = {
+  series: Array<{ date: string; views: number; likes: number; comments: number }>
+  aggregatedAt: string | null
+  totals: {
+    views: number
+    likes: number
+    pendingComments: number
+    approvedComments: number
+    publishedPosts: number
+    publishedTimeline: number
+  }
+}
+
+/**
+ * 后台分析数据。
+ *
+ * 趋势只读 site_daily_stats（与公开页同一口径，保证两处数字可解释地一致），
+ * 累计量直接 count 真实表。不在这里下发任何逐条原始事件。
+ */
+export async function getAdminAnalytics(days = 30): Promise<AdminAnalytics> {
+  const capped = Math.min(Math.max(1, Math.floor(days)), 365)
+
+  const [seriesRows, totalsRow, lastRow] = await Promise.all([
+    query<{ date: string; views_count: number; likes_count: number; comments_count: number }>(
+      `select to_char(date, 'YYYY-MM-DD') as date,
+              views_count, likes_count, comments_count
+         from public.site_daily_stats
+        where date >= current_date - ($1::int - 1)
+        order by date asc`,
+      [capped],
+    ),
+    queryOne<Record<string, string>>(
+      `select
+         (select count(*) from public.page_views)::text                          as views,
+         (select count(*) from public.likes)::text                               as likes,
+         (select count(*) from public.comments where status = 'pending')::text    as pending_comments,
+         (select count(*) from public.comments where status = 'approved')::text   as approved_comments,
+         (select count(*) from public.posts where status = 'published')::text     as published_posts,
+         (select count(*) from public.timeline_items where status = 'published')::text as published_timeline`,
+    ),
+    queryOne<{ last_date: string | null }>(
+      `select to_char(max(date), 'YYYY-MM-DD') as last_date from public.site_daily_stats`,
+    ),
+  ])
+
+  return {
+    series: seriesRows.map((row) => ({
+      date: row.date,
+      views: Number(row.views_count),
+      likes: Number(row.likes_count),
+      comments: Number(row.comments_count),
+    })),
+    aggregatedAt: lastRow?.last_date ?? null,
+    totals: {
+      views: Number(totalsRow?.views ?? 0),
+      likes: Number(totalsRow?.likes ?? 0),
+      pendingComments: Number(totalsRow?.pending_comments ?? 0),
+      approvedComments: Number(totalsRow?.approved_comments ?? 0),
+      publishedPosts: Number(totalsRow?.published_posts ?? 0),
+      publishedTimeline: Number(totalsRow?.published_timeline ?? 0),
+    },
+  }
+}

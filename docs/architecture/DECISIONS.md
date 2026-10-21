@@ -354,6 +354,122 @@ docs/architecture/       架构决策与框架说明
 
 - `000002_rls_policies.sql` **从未在真实 Supabase 上执行过**（无项目凭据），只做了静态审查；自建库上它被 `db-migrate.mjs` 的 `/_rls_policies\.sql$/` 规则正确跳过
 - 后台登录的浏览器端流程未做真实点击验证，只验证了底层 SQL 令牌语义与构建产物；真实邮件通道未接入，开发环境靠登录页回显 `devLink` 完成流程
-- `middleware.ts` 未实现（D-09 列为 Phase 8 交付物）；不影响安全性，授权在 `app/admin/layout.tsx` 与每个 Server Action 各做一次
+- `middleware.ts` **本轮已实现**（见 D-14 决策九）；它只做 cookie 存在性检查与 `X-Robots-Tag`，**不是安全边界**，授权仍在 `app/admin/layout.tsx` 与每个 Server Action 各做一次
 - 后台移动端抽屉未实现（见 D-13 决策八）
 - Cloudflare Turnstile 未接入，评论防刷目前只靠限流 + `pending` + 数据库唯一约束
+
+---
+
+## D-14 统计页、后台分析、RSS 与 middleware
+
+**决策一：`sitemap.ts` 必须经 `getDataPorts()`，不能直接读文件仓库。**
+
+原实现直接 `import { listPosts } from '@/lib/content/repository'`，有两个后果：有 `DATABASE_URL` 时只读文件系统，漏掉仅存在于数据库的文章（与页面看到的已发布集合不一致）；违反「页面只能依赖 `lib/data/ports.ts`」约束。
+
+修正后同时纳入公开时间轴节点——原实现**完全漏掉了 `/timeline/[id]`**，而路由表里有 15 条预渲染路径。实测 URL 数从 6 条增至 21 条。
+
+时间轴 `lastModified` 用 `occurredAt`：它没有 `updatedAt` 语义，拿内容发生日期比拿构建日期更接近真实变更时间。
+
+**决策二：统计端口只新增两个读方法，不让页面直接查聚合表。**
+
+`StatsPort` 新增 `getDailySeries(days)` 与 `getLastAggregatedDate()`。postgres 适配器读 `site_daily_stats`，日期用 `to_char(date,'YYYY-MM-DD')`；file 适配器返回 `[]` / `null`。
+
+**刻意不造全零序列**：文件模式返回空数组而不是一条全零趋势，否则会被误读为「那几天真的没人访问」。
+
+**决策三：`aggregated` 的判据是 `aggregatedAt !== null`，不是 `series` 非空。**
+
+这是两种不同的空状态：
+
+| 状态 | `aggregatedAt` | 页面提示 |
+| --- | --- | --- |
+| 文件模式（无聚合表） | `null` | 「文件模式没有每日聚合表。配置 DATABASE_URL 并运行聚合任务…」 |
+| 有库但没跑过聚合 | `null` | 「每日聚合任务尚未运行。执行 npm run db:aggregate…」 |
+| 有聚合数据 | `YYYY-MM-DD` | 画趋势 + 标注更新至该日 |
+
+把两者混为「series 为空」会给出错误的下一步指引。
+
+**决策四：趋势窗口以「最后聚合日期」为锚点，不以今天。**
+
+`fillSeriesGaps(series, days, anchor)` 补齐连续 N 天。若用今天做锚点，聚合任务停跑时会画出一段全零尾巴冒充「那几天没人访问」——那是假的。
+
+补齐是必需的：聚合表只有「跑过聚合的那几天」的行，缺的日子不能从图表里消失，否则横轴会跳过空白天，视觉上把稀疏数据读成连续增长。
+
+**日期算术只在字符串上做**（`Date.parse('YYYY-MM-DD' + 'T00:00:00Z')`），不把 `Date` 转回本地时区——延续缺陷一的硬规则。
+
+**决策五：统计页 ISR 15 分钟，不声称实时。**
+
+设计 07 §6 要求 15 分钟到 1 小时。`export const revalidate = 900`。聚合数据本身就是按天粒度的，秒级新鲜度没有意义，而每次访问都扫一遍表才是真的浪费。页面明写「数据更新至 …」而不是「实时」。
+
+**决策六：图表不引入图表库，用柱状 + `sr-only` 数据表。**
+
+只有一条序列（浏览/点赞/评论分开画），柱状已能表达清楚。多引一个客户端库会让这个本来可以是纯静态的页面变成需要 hydration 的页面。
+
+设计 07 §7 要求「每张图表提供标题、文字摘要和可访问数据表」。这里用 `sr-only` 表格提供**逐日数字**，而不是只给 `aria-label`——后者只能说明「这是图」，说不出每天的具体值。柱状区本身 `aria-hidden`，避免屏幕阅读器把 30 个无意义 div 读一遍。
+
+**决策七：后台分析页与公开统计页并列存在，不复用同一页面。**
+
+关键差异：后台能看到**待审核**评论数（公开页刻意不展示）、窗口可切 7/30/90 天、同时给浏览榜与点赞榜。趋势仍复用 `TrendBars`——后台不需要第二套图表实现。
+
+窗口白名单 `[7, 30, 90]`，非法值回退 30 天且不执行查询（设计 13 §4）。
+
+**决策八：`/admin/posts` 是只读索引，不提供会失败的编辑入口。**
+
+设计 10 §1 明确 MVP 阶段为只读索引。因此这里**刻意不放「编辑」按钮**——一个点了会说「暂不支持」的按钮比没有按钮更差。取而代之是把 `source`（`file` / `db`）标出来，并给出该来源下正确的修改路径。
+
+未发布文章不给公开链接（会 404），显示「未发布」。
+
+**决策九：`middleware.ts` 不是安全边界，只做快速检查与响应头。**
+
+它**只**做两件事：
+1. 对 `/admin/*`（登录页除外）检查会话 cookie 是否**存在**，没有就跳登录页，省掉一次服务端渲染。
+2. 给后台响应补 `X-Robots-Tag: noindex, nofollow`，作为页面 metadata 的第二道保险。
+
+**它只能验证 cookie 存在，不能验证 cookie 有效**（Edge 运行时无法查库）。把安全边界放在这里会得到一个「看起来有守卫、实际可以被伪造 cookie 绕过」的假保护。真正的授权在 `app/admin/layout.tsx` 的 `requireAdmin()` 与每个 Server Action 里各做一次。
+
+**不能在 middleware 里 import 任何 server-only 模块**：`lib/auth/admin.ts` 带 `import 'server-only'` 且依赖 `pg` 与 `node:crypto`，在这里引用会直接构建失败。因此 cookie 名在此**重复写一次**，并用注释指向唯一来源。
+
+`matcher: ['/admin/:path*']` 刻意不用宽泛的 `/((?!_next).*)`：那会让每个公开请求都过一次 middleware，而公开页面是静态生成的，多这一跳只增加延迟、不增加能力。实测公开页响应头中无 `X-Robots-Tag`，证明 matcher 未误伤。
+
+`next` 参数只带 `pathname + search`，不带完整 URL，避免把外部来源拼进去；`safeAdminRedirect` 会再校验一次。
+
+**决策十：RSS 只输出摘要，且 `category` 必须去重。**
+
+设计 11 §7 明确「推荐摘要降低 MDX 自定义组件问题」；全文 feed 需要把 MDX 编译成 HTML 再塞进 XML，自定义组件一旦引入客户端交互就会产生非法标记。
+
+只包含已发布且非未来的文章——端口层的 `list()` 已经过滤过，这里**不再重复判断**，两处各判一次只会让规则漂移。
+
+`pubDate` 必须是 RFC 822（如 `Fri, 17 Jul 2026 00:00:00 GMT`）。纯日期没有时刻，统一按 UTC 零点输出，避免同一篇文章在不同部署时区显示成不同日期。
+
+手动 XML 转义 `& < > " '`：标题与摘要里可能出现这些字符，不转义就会生成解析失败的 feed。
+
+**实测发现并修复一个真实小缺陷**：`<category>` 输出重复——文章的 `category` 与 `tags[0]` 都是「设计系统」，未去重时输出两个相同的 `<category>`。用 `Array.from(new Set(...))` 去重后从 3 个降到 2 个。
+
+---
+
+## 附：D-14 实测证据
+
+**真实 PostgreSQL 18.4（embedded-postgres，端口 55461 / 55471）**：
+
+- 迁移应用 000001/000003–000010，跳过 000002
+- 造 4 天聚合数据（含一天全零空洞）：`getDailySeries` 返回 4 行、日期均为 `YYYY-MM-DD`、首项 `2026-10-17`；`getLastAggregatedDate` 返回 `2026-10-20`
+- 空聚合表时 `to_char(max(date),'YYYY-MM-DD')` 返回 `null`（不是空串），与 `aggregated` 判据一致
+- 后台文章索引：`db-post | published | source=db | featured=true | pub=2026-07-17 | upd=2026-07-18`，日期无偏移
+- 窗口 7/30/90 天均能查到 4 行（窗口只影响下界）
+- 热门榜：`post/db-post:2 timeline_item/site-v0-1-launch:1`
+
+**构建与产物**：
+
+- 无 `DATABASE_URL`：`typecheck` exit=0，`build` exit=0，**26/26 静态页**；`/stats` 为 `○` + **15m revalidate**，`/rss.xml` 为 `○` + 1h；`/admin/posts` 与 `/admin/analytics` 为 `ƒ`；`/posts/[slug]` 与 `/timeline/[id]` 保持 `●`；First Load JS 共享 103 kB（未变）
+- **Middleware 34.2 kB** 已生效
+- `sitemap.xml`：URL 数从 6 条增至 **21 条**（5 静态 + 1 文章 + 15 时间轴节点）
+- `rss.xml`：`status=200`，`content-type: application/rss+xml; charset=utf-8`，中文无乱码，`pubDate` 为 RFC 822，绝对 canonical，`<category>` 去重后 2 条
+- 无库 `/stats`（20583 B）：含「累计指标」「趋势数据积累中」「口径与隐私」「文件模式没有每日聚合表」，**无全零假趋势线**
+- 有库 `/stats`（57205 B）：`数据更新至：2026-10-20`、`窗口内合计：浏览 46`（12+0+25+9）、`单日峰值 25`、含 `sr-only` 数据表与 `2026-10-19`（零值日仍在序列中）、热门榜含「库内文章」
+- `/admin` 无 cookie → **307** 跳 `/admin/login?next=%2Fadmin`；`/admin/posts` → `next=%2Fadmin%2Fposts` 且带 `X-Robots-Tag: noindex, nofollow`
+- 公开页 `/`、`/posts`、`/stats`、`/timeline`、`/posts/playful-recorder`、`/timeline/site-v0-1-launch`、`/about`、`/sitemap.xml` 均 **200** 且无 `X-Robots-Tag`（matcher 未误伤）
+
+**未验证范围**：
+
+- `middleware.ts` 只在 `next start` 下做了真实 HTTP 验证，未在 Edge 生产环境（Vercel / Cloudflare）验证运行时兼容性
+- RSS 未用真实 feed 阅读器验证渲染效果，只验证了 XML 结构与响应头
+- 后台分析页的图表视觉未做截图验证，只验证了 HTML 结构与数字正确性

@@ -18,6 +18,13 @@ export const metadata: Metadata = {
     description: siteConfig.description,
     siteName: siteConfig.name,
   },
+  // 设计 module 11 §7：feed 发现链接由布局统一声明，
+  // 避免每篇文章各自拼一份。
+  alternates: {
+    types: {
+      'application/rss+xml': '/rss.xml',
+    },
+  },
 }
 
 /**

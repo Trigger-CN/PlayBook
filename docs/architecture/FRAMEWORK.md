@@ -103,10 +103,13 @@ content/posts/*.mdx
 | `/about` | Static | 静态内容 |
 | `/timeline` | Static | 客户端筛选，不读 searchParams |
 | `/timeline/[id]` | SSG | `generateStaticParams` 预渲染全部已发布节点 |
-| `/stats` | Static | 占位骨架，待接入聚合展示 |
+| `/stats` | Static + ISR 15m | 累计指标、近 30 天趋势、热门榜、活跃、口径说明 |
+| `/rss.xml` | Static + ISR 1h | RSS 2.0，只输出摘要，`application/rss+xml` |
 | `/api/likes`、`/api/comments`、`/api/views` | Dynamic | Route Handler，`runtime = 'nodejs'` + `force-dynamic` |
-| `/admin`、`/admin/comments`、`/admin/timeline`、`/admin/login`、`/admin/login/verify` | Dynamic | 读会话 cookie，`force-dynamic` + `noindex,nofollow` |
-| `/robots.txt`、`/sitemap.xml`、`/_not-found` | Static | 由路由生成 |
+| `/admin`、`/admin/posts`、`/admin/comments`、`/admin/timeline`、`/admin/analytics`、`/admin/login`、`/admin/login/verify` | Dynamic | 读会话 cookie，`force-dynamic` + `noindex,nofollow` |
+| `/robots.txt`、`/sitemap.xml`、`/_not-found` | Static | 由路由生成；sitemap 含文章与时间轴节点 |
+
+Middleware 34.2 kB，`matcher: ['/admin/:path*']`。First Load JS 共享 103 kB。根布局必须保持不读 `cookies()`，否则整站退化为 Dynamic。
 
 First Load JS 共享 103 kB。根布局必须保持不读 `cookies()`，否则整站退化为 Dynamic。
 
@@ -120,7 +123,8 @@ First Load JS 共享 103 kB。根布局必须保持不读 `cookies()`，否则�
 | Phase 5 | `supabase/migrations/` | 已完成（000001–000010） |
 | Phase 6 | `app/api/{likes,comments,views}/route.ts` | 已完成 |
 | Phase 7 | `lib/activity`、`lib/cache/tags` | 已完成 |
-| Phase 8 | `app/admin/`、`lib/auth/admin.ts` | 已完成；`middleware.ts` 未实现 |
+| Phase 8 | `app/admin/`、`lib/auth/admin.ts`、`middleware.ts` | 已完成 |
+| Phase 9（部分） | `app/rss.xml/`、`app/admin/analytics/`、`app/(site)/stats/` | RSS、后台分析、真实统计页已完成；动画、OG 图、全文搜索、在线编辑器未做 |
 
 ---
 
@@ -358,3 +362,50 @@ app/admin/timeline/*           新建/编辑同表单 upsert + 状态切换
 - 阅读时间口径与 `lib/content/repository.ts`、`lib/data/adapters/postgres.ts` 必须一致。
 
 **为什么不做「页面同时猜两个来源」**：那会制造「改了文件但页面没变」的静默不一致，比多跑一条命令更贵。
+
+---
+
+## 14. 统计页与趋势图
+
+```text
+lib/stats/public.ts            loadPublicStats / loadRankedPopular / sumSeries / fillSeriesGaps
+components/stats/trend-bars.tsx  柱状趋势 + sr-only 数据表（无图表库）
+app/(site)/stats/page.tsx      公开统计页，ISR 15 分钟
+app/admin/analytics/page.tsx   后台分析，7/30/90 天窗口
+```
+
+**数据流**：页面 → `lib/stats/public.ts` → `getDataPorts().stats.*` → `site_daily_stats`。页面从不直接查聚合表。
+
+**两种空状态必须分开**：
+
+| 状态 | `aggregatedAt` | 提示 |
+| --- | --- | --- |
+| 文件模式 | `null` | 「文件模式没有每日聚合表。配置 DATABASE_URL 并运行聚合任务…」 |
+| 有库未聚合 | `null` | 「每日聚合任务尚未运行。执行 npm run db:aggregate…」 |
+| 有数据 | `YYYY-MM-DD` | 画趋势 + 标注更新至该日 |
+
+**趋势窗口以「最后聚合日期」为锚点**，不用今天。用今天做锚点会在聚合停跑时画出一段全零尾巴，让人以为那几天真的没人访问。
+
+`fillSeriesGaps()` 把稀疏的聚合行补成连续 N 天，否则横轴会跳过空白天，视觉上把稀疏数据读成连续增长。日期算术只在 `YYYY-MM-DD` 字符串上做，不经 JS 时区换算。
+
+**图表无客户端库**：柱状用 div 高度表达，`aria-hidden`；逐日数字放在 `sr-only` 表格里。只给 `aria-label` 是不够的——那只能说「这是图」，说不出每天的值。
+
+---
+
+## 15. RSS 与 middleware
+
+**RSS**（`app/rss.xml/route.ts`，ISR 1h）：
+
+- 只输出摘要，不输出全文——全文需要把 MDX 编译成 HTML 塞进 XML，自定义组件一旦引入客户端交互就会产生非法标记。
+- 只包含已发布非未来文章；端口层 `list()` 已过滤，此处不重复判断。
+- `pubDate` 为 RFC 822；纯日期按 UTC 零点输出，避免跨时区显示成不同日期。
+- 手动转义 `& < > " '`；`category` 用 `Set` 去重（`category` 常与 `tags[0]` 同名）。
+- 布局通过 `metadata.alternates.types['application/rss+xml']` 声明 feed 发现链接。
+
+**middleware**（`middleware.ts`，`matcher: ['/admin/:path*']`）：
+
+只做两件事：检查 `/admin/*` 会话 cookie 是否**存在**（不存在则 307 到登录页并带 `next`）；给后台响应补 `X-Robots-Tag: noindex, nofollow`。
+
+**它不是安全边界**：Edge 运行时无法查库，只能验 cookie 存在性，不能验有效性。真正授权在 `app/admin/layout.tsx` 的 `requireAdmin()` 与每个 Server Action。
+
+不能在 middleware 里 import `lib/auth/admin.ts`（带 `server-only` 且依赖 `pg` / `node:crypto`，会构建失败），因此 cookie 名在 middleware 里重复写一次并注释指向唯一来源。

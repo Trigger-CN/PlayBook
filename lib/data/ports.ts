@@ -150,6 +150,30 @@ export type PopularItem = {
   count: number
 }
 
+/** 每日聚合行（设计 07 §5 的 series 项）。date 为 YYYY-MM-DD。 */
+export type DailyStatPoint = {
+  date: string
+  views: number
+  likes: number
+  comments: number
+}
+
+/**
+ * 统计页的完整数据包（设计 07 §5）。
+ *
+ * `aggregated` 为 false 表示当前数据源不提供聚合（文件模式），
+ * 页面据此展示说明而不是画一条全零的假趋势线。
+ */
+export type PublicStats = {
+  totals: SiteTotals
+  series: DailyStatPoint[]
+  popularPosts: PopularItem[]
+  popularTimeline: PopularItem[]
+  /** 最后一次聚合日期（YYYY-MM-DD）；未聚合过为 null。 */
+  aggregatedAt: string | null
+  aggregated: boolean
+}
+
 export type StatsPort = {
   /** 累计总量从内容源取，不读每日聚合表（决策 D-07）。 */
   getContentTotals(): Promise<ContentTotals>
@@ -159,6 +183,10 @@ export type StatsPort = {
   listPopular(kind: 'views' | 'likes', limit: number): Promise<PopularItem[]>
   /** 最近公开活跃事件（module 09 §4：已过滤待审核与访客标识）。 */
   listRecentActivity(limit: number): Promise<ActivityEntry[]>
+  /** 近 N 天每日聚合序列，按日期升序；只读聚合表，不扫原始事件（module 09 §5）。 */
+  getDailySeries(days: number): Promise<DailyStatPoint[]>
+  /** 最后一次聚合日期；从未聚合返回 null。 */
+  getLastAggregatedDate(): Promise<string | null>
 }
 
 // ---------------------------------------------------------------------------
