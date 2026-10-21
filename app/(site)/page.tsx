@@ -8,8 +8,7 @@ import { ToyButton } from '@/components/ui/toy-button'
 import { ToyCard } from '@/components/ui/toy-card'
 import { siteConfig } from '@/config/site'
 import { timelineTypeStyles } from '@/config/timeline'
-import { filePostRepository } from '@/lib/content/repository'
-import { listPublicTimelineItems } from '@/lib/timeline/repository'
+import { getDataPorts } from '@/lib/data'
 
 const recentCardBases = ['coral', 'mint', 'sky'] as const
 
@@ -23,8 +22,11 @@ function formatMonthDay(isoDate: string): string {
 }
 
 export default async function HomePage() {
-  const { items, total: postTotal } = await filePostRepository.list({ pageSize: 3 })
-  const timelineItems = listPublicTimelineItems()
+  const ports = getDataPorts()
+  const [{ items, total: postTotal }, timelineItems] = await Promise.all([
+    ports.posts.list({ pageSize: 3 }),
+    ports.timeline.listPublic(),
+  ])
   const recentTimeline = timelineItems.slice(0, HOME_TIMELINE_LIMIT)
 
   const yearsCovered = new Set(timelineItems.map((item) => item.occurredAt.slice(0, 4))).size

@@ -1,5 +1,19 @@
 -- =============================================================================
--- Phase 5 / RLS 策略
+-- Phase 5 / RLS 策略 —— 【Supabase 专属，仅在 Supabase 上执行】
+--
+-- 本文件使用了只有 Supabase 才存在的对象：
+--   * schema auth（auth.jwt()、auth.role()）
+--   * 角色 anon / authenticated / service_role
+-- 因此自建 PostgreSQL 上执行必然报错。
+--
+-- 执行策略（见 docs/architecture/DECISIONS.md D-11）：
+--   scripts/db-migrate.mjs 会先探测目标库是否为 Supabase
+--   （存在 auth schema 或 supabase_admin 角色）。
+--   * 是 Supabase → 执行本文件。
+--   * 自建库     → 跳过本文件（文件名匹配 /_rls_policies\.sql$/）。
+-- 自建库的权限收紧改由应用层保证：所有写操作只经由 server-only 的
+-- 数据适配器（lib/data/adapters/postgres.ts）使用单一应用角色执行。
+--
 -- 依据：TECHNICAL_ARCHITECTURE.md 9.2、docs/design/modules/06-comments.md §9、
 --       07-likes.md §5、08-page-views.md §6、09-stats-activity.md §2
 --
@@ -132,3 +146,23 @@ create policy site_daily_stats_admin_all on public.site_daily_stats
   for all to authenticated
   using (public.is_admin())
   with check (public.is_admin());
+
+-- -----------------------------------------------------------------------------
+-- 公开计数函数的执行权限（从 000003 移入本文件）
+--
+-- 这些 grant/revoke 引用了 service_role / anon / authenticated 三个角色，
+-- 只在 Supabase 存在，因此必须与 RLS 同处「Supabase 专属」文件，
+-- 不能留在可移植的 000003 里（否则自建库执行会报 role does not exist）。
+--
+-- 语义：撤销默认的 PUBLIC 执行权，只允许 service_role 调用。
+-- 服务端 Route Handler 以 service role 调用这些函数，anon 无法直接调用。
+-- -----------------------------------------------------------------------------
+revoke all on function public.get_like_state(text, text, text) from public, anon, authenticated;
+revoke all on function public.get_like_counts(text, text[]) from public, anon, authenticated;
+revoke all on function public.record_page_view(text, text, text, text, text, text, text, integer) from public, anon, authenticated;
+revoke all on function public.get_content_totals() from public, anon, authenticated;
+
+grant execute on function public.get_like_state(text, text, text) to service_role;
+grant execute on function public.get_like_counts(text, text[]) to service_role;
+grant execute on function public.record_page_view(text, text, text, text, text, text, text, integer) to service_role;
+grant execute on function public.get_content_totals() to service_role;

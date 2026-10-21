@@ -158,8 +158,8 @@ npm run build      # 生产构建
 ```text
 lib/timeline/types.ts       六种类型与三种状态的字面量定义
 lib/timeline/view.ts        排序、日期格式化、年/月分组
-lib/timeline/seed.ts        本地种子数据（Phase 4 的内容来源）
-lib/timeline/repository.ts  只暴露 published，并提供相邻节点查询
+lib/timeline/seed.ts        本地种子数据（无数据库时的内容来源）
+lib/timeline/repository.ts  旧的直接实现；页面已改走 lib/data 端口层
 lib/supabase/database.types.ts  数据库 schema 的 TypeScript 映射
 config/timeline.ts          类型 → 标签/图标/色对的唯一映射
 ```
@@ -168,24 +168,46 @@ config/timeline.ts          类型 → 标签/图标/色对的唯一映射
 - 只有 `status === 'published'` 进入公开页面，`draft` 与 `archived` 均不展示。
 - 类型必须同时以文字和颜色表达，颜色只能取自 `config/timeline.ts`。
 - 筛选在客户端完成，`/timeline` 因此不读 `searchParams`，保持静态生成。
-- Phase 5 接入 Supabase 时只替换 `repository.ts` 的实现，页面层不变。
+- 页面通过 `getDataPorts().timeline` 取数据，不直接引用 `seed.ts` 或 SQL。
+- Phase 5 接入 Supabase 时只需新增一个适配器，页面层不变。
 
 ### 9.3 首页聚合
 
 首页由五个区块组成：Hero、快捷入口、最近文章、最近时间轴、站点概览。
 
-- 最近文章取 `filePostRepository.list({ pageSize: 3 })`。
-- 最近时间轴取 `listPublicTimelineItems()` 的前 5 条，与 `/timeline` 共用 `TimelineCard`。
+- 最近文章取 `getDataPorts().posts.list({ pageSize: 3 })`。
+- 最近时间轴取 `getDataPorts().timeline.listPublic()` 的前 5 条，与 `/timeline` 共用 `TimelineCard`。
 - 站点概览的四个数字全部来自真实内容源：已发布文章数取 `list` 返回的 `total`，时间轴记录数取公开节点总数，记录跨度取节点年份去重数，最近更新取文章 `updatedAt ?? publishedAt` 与最新节点的最大日期。
 - 浏览量、点赞、评论三项在 Phase 6/7 接入后再补，当前不显示占位数字。
 
-### 9.4 Supabase 数据层（Phase 5）
+### 9.4 数据端口层与两套实现（当前主用自建 PostgreSQL）
+
+页面只能依赖接口，不直接引用具体数据源。切换实现只改 `getDataPorts()` 一个分支。
 
 ```text
-supabase/migrations/20261021000001_init_schema.sql   7 张表、check 约束、索引、updated_at 触发器
-supabase/migrations/20261021000002_rls_policies.sql  RLS 策略与 is_admin()
-supabase/migrations/20261021000003_public_counts.sql 聚合与去重函数（仅 service_role 可执行）
-supabase/seed.sql                                    开发种子数据，on conflict do nothing
+lib/data/ports.ts              与驱动无关的接口契约（PostPort / TimelinePort / InteractionPort / StatsPort）
+lib/data/index.ts              getDataPorts()：有 DATABASE_URL 走 postgresPorts，否则走 filePorts
+lib/data/adapters/file.ts      文件/种子实现；互动方法显式抛错，不假装成功
+lib/data/adapters/postgres.ts  自建库实现；只用标准 SQL，无 auth.* / service_role
+lib/db/pool.ts                 pg 连接池单例（挂 globalThis，避免 dev 热重载耗尽连接）
+lib/db/query.ts                query / queryOne / withTransaction / checkDatabaseHealth
+scripts/db-migrate.mjs         迁移执行器：schema_migrations 幂等、单文件单事务、能力探测
+scripts/db-health.mjs          连通性与 schema 自检（只打印 host:port/db，不打印连接串）
+```
+
+迁移文件分层（SQL 只写一份，自建库与 Supabase 共用）：
+
+```text
+supabase/migrations/20261021000001_init_schema.sql            通用：7 张表、28 条约束、索引、触发器
+supabase/migrations/20261021000002_rls_policies.sql          【仅 Supabase】RLS + is_admin() + grant to service_role
+supabase/migrations/20261021000003_public_counts.sql         通用：四个 security definer 计数/去重函数
+supabase/migrations/20261021000004_lock_down_functions.sql   通用：revoke execute from public
+supabase/seed.sql                                            开发种子数据，on conflict do nothing
+```
+
+Supabase 客户端（保留待切换，当前不被页面调用）：
+
+```text
 lib/supabase/env.ts             读取 NEXT_PUBLIC_* 配置，空串视为未配置
 lib/supabase/database.types.ts  Database 泛型，随迁移同步维护
 lib/supabase/server.ts          createSupabaseServerClient（带会话）/ createSupabaseStaticClient（不带 cookie）
@@ -195,7 +217,22 @@ lib/supabase/admin.ts           service role，首行 import 'server-only'
 
 **约束**：
 
+- 页面与业务组件不得直接引用 `lib/db`、`lib/supabase` 或 `lib/timeline/seed`，只能经 `getDataPorts()`。
+- `getDataPorts()` 只看 `DATABASE_URL` 是否存在，不做连接探测；配错时错误在首次查询抛出，而不是让构建失败。
+- 无 `DATABASE_URL` 时整站仍可构建与运行（回退 `filePorts`）；互动方法会显式报错提示需配置数据库，不返回假的 0。
 - 迁移必须可重复执行；新增字段时同步 `database.types.ts`。
 - `admin.ts` 只能被 Route Handler、Server Action 或服务端脚本引用；客户端组件一旦引入会在构建期失败，这是有意设置的护栏。
 - 公开内容页用 `createSupabaseStaticClient()`，不要用带会话的版本，否则路由会退化为 Dynamic。
-- 无 Supabase 凭据时整站仍可构建与运行，因为当前数据源仍是 `content/posts` 与 `lib/timeline/seed.ts`。
+
+**本地数据库工作流**（需自备 PostgreSQL，并把连接串写入 `.env.local`；`.env.local` 不入库）：
+
+```powershell
+npm run db:migrate        # 应用未执行的迁移（自建库自动跳过 000002）
+npm run db:migrate:dry    # 只列出将执行的迁移
+npm run db:seed           # 迁移后写入 seed.sql
+npm run db:health         # 连通性 + 表/函数/迁移自检
+```
+
+已用真实 PostgreSQL 18.4 验证：迁移全部跑通且幂等、约束拦截有效、去重函数生效、用 `DATABASE_URL` 构建后页面数据确实来自库、无 `DATABASE_URL` 时 25/25 静态页且路由类型不退化。
+
+**已知未验证**：`000002_rls_policies.sql` 从未在真实 Supabase 上执行（缺项目凭据）；文章正文仍留在 MDX，未迁库。

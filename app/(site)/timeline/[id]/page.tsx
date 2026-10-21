@@ -5,24 +5,21 @@ import { notFound } from 'next/navigation'
 import { ToyButton } from '@/components/ui/toy-button'
 import { ToyCard } from '@/components/ui/toy-card'
 import { timelineTypeStyles } from '@/config/timeline'
-import {
-  getAdjacentTimelineItems,
-  getPublicTimelineItem,
-  listPublicTimelineItems,
-} from '@/lib/timeline/repository'
+import { getDataPorts } from '@/lib/data'
 import { formatTimelineDate } from '@/lib/timeline/view'
 
 type TimelineDetailProps = {
   params: Promise<{ id: string }>
 }
 
-export function generateStaticParams() {
-  return listPublicTimelineItems().map((item) => ({ id: item.id }))
+export async function generateStaticParams() {
+  const items = await getDataPorts().timeline.listPublic()
+  return items.map((item) => ({ id: item.id }))
 }
 
 export async function generateMetadata({ params }: TimelineDetailProps): Promise<Metadata> {
   const { id } = await params
-  const item = getPublicTimelineItem(id)
+  const item = await getDataPorts().timeline.getPublic(id)
   if (!item) return { title: '记录未找到' }
 
   const typeStyle = timelineTypeStyles[item.type]
@@ -47,11 +44,12 @@ function externalHost(url: string): string | null {
 
 export default async function TimelineDetailPage({ params }: TimelineDetailProps) {
   const { id } = await params
-  const item = getPublicTimelineItem(id)
+  const ports = getDataPorts()
+  const item = await ports.timeline.getPublic(id)
   if (!item) notFound()
 
   const typeStyle = timelineTypeStyles[item.type]
-  const { newer, older } = getAdjacentTimelineItems(item.id)
+  const { newer, older } = await ports.timeline.getAdjacent(item.id)
   const paragraphs = item.content
     .split(/\n{2,}/)
     .map((paragraph) => paragraph.trim())

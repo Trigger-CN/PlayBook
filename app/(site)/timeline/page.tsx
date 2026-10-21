@@ -1,15 +1,15 @@
 import type { Metadata } from 'next'
 
 import { TimelineExplorer } from '@/components/site/timeline-explorer'
-import { listPublicTimelineItems } from '@/lib/timeline/repository'
+import { getDataPorts } from '@/lib/data'
 
 export const metadata: Metadata = {
   title: '时间轴',
   description: '按时间顺序记录的项目、旅行、阅读与随手记。',
 }
 
-export default function TimelinePage() {
-  const items = listPublicTimelineItems()
+export default async function TimelinePage() {
+  const items = await getDataPorts().timeline.listPublic()
 
   return (
     <>

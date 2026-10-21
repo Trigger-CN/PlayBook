@@ -1,9 +1,17 @@
 -- =============================================================================
--- Phase 5 / 公开计数与去重写入函数
+-- Phase 5 / 公开计数与去重写入函数 —— 【可移植：自建库与 Supabase 通用】
 -- 依据：docs/design/modules/07-likes.md §6、08-page-views.md §4
 --
+-- 本文件只包含标准 PostgreSQL 对象（function / plpgsql），
+-- 不引用 auth schema，也不引用 anon / authenticated / service_role 角色，
+-- 因此自建 PostgreSQL 与 Supabase 都能执行。
+--
 -- 这些函数只暴露聚合结果，不返回 visitor_id 或逐行记录。
--- 供服务端 Route Handler 以 service role 调用；anon 不授予 execute。
+-- 权限收紧分两层：
+--   * 应用层：只由 server-only 的数据适配器调用（lib/data/adapters/postgres.ts）。
+--   * Supabase 侧：grant/revoke 引用 service_role 等角色，只能放在
+--     Supabase 专属的 20261021000002_rls_policies.sql 末尾（见 D-11）。
+--   * 通用侧：撤销 PUBLIC 的默认 EXECUTE，见 000004。
 -- =============================================================================
 
 -- -----------------------------------------------------------------------------
@@ -111,17 +119,3 @@ as $$
     (select count(*)::bigint from public.posts where status = 'published'),
     (select count(*)::bigint from public.timeline_items where status = 'published');
 $$;
-
--- -----------------------------------------------------------------------------
--- 权限：撤销默认的 public 执行权，只授予 service_role。
--- 服务端 handler 使用 service role 调用这些函数。
--- -----------------------------------------------------------------------------
-revoke all on function public.get_like_state(text, text, text) from public, anon, authenticated;
-revoke all on function public.get_like_counts(text, text[]) from public, anon, authenticated;
-revoke all on function public.record_page_view(text, text, text, text, text, text, text, integer) from public, anon, authenticated;
-revoke all on function public.get_content_totals() from public, anon, authenticated;
-
-grant execute on function public.get_like_state(text, text, text) to service_role;
-grant execute on function public.get_like_counts(text, text[]) to service_role;
-grant execute on function public.record_page_view(text, text, text, text, text, text, text, integer) to service_role;
-grant execute on function public.get_content_totals() to service_role;
