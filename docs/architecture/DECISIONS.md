@@ -945,3 +945,96 @@ Error: Cookies can only be modified in a Server Action or Route Handler.
 - 浏览器级 UI 交互（键盘 Tab 顺序、390px 视觉、`beforeunload` 实际弹窗）**未做截图或人工验收**，只做了 HTML 级断言。
 - `revalidatePath` 在多实例部署下的行为未验证（本轮是单进程 `next start`）。
 - Cloudflare Turnstile 未接入（`TURNSTILE_SECRET_KEY` 仍为空）。
+
+## D-18 前台后台入口：放在顶部而非页脚
+
+### 1. 决策与背景
+
+此前前台**没有任何链接指向后台**（首页 / 关于 / 文章 / 时间轴 / 统计五个页面各为 `admin 链接数=0`），只能手动输入 `http://localhost:3000/admin`。这与 `app/robots.ts` 的 `disallow: ['/admin', ...]` 及后台全量 `noindex,nofollow` 一致，是设计取舍，不是遗漏。
+
+当时给了两个方案，本轮用户选择 **A：在页面顶部加入登录按钮**。
+
+| 方案 | 做法 | 代价 |
+| --- | --- | --- |
+| **A（已采用）** | Header 右侧加一个「登录」按钮 | 访客与爬虫可见 |
+| B | 只在 `NODE_ENV !== 'production'` 时渲染 | 生产站点完全无痕迹 |
+
+### 2. 为什么链接指向 `/admin` 而不是 `/admin/login`
+
+同一个按钮必须对两种登录状态都成立。指向 `/admin` 时：
+
+- 未登录 → `(protected)/layout.tsx` 的 `requireAdmin()` 返回 null → `redirect('/admin/login?next=/admin')`，回跳参数自动带上；
+- 已登录 → 直接进后台概览。
+
+如果指向 `/admin/login`，已登录用户点进去会看到一个多余的登录页；如果要在前台按登录态切换文案，就得在公开页读 cookie —— 那会让**全站路由退化为 Dynamic**，违背 REQ-NFR-001。用 `/admin` 把这个判断留在后台，公开页保持纯静态。
+
+### 3. 为什么按钮在 `<nav aria-label="主导航">` 之外
+
+`SiteNav` 渲染的 `<nav>` 是主导航 landmark，里面只应有栏目链接（首页 / 文章 / 时间轴 / 关于）和一个主题开关。「登录」不是栏目，它是跳转到另一个应用区域的入口。混进去会让读屏用户在「主导航」里听到一个不属于栏目的东西。
+
+结构上改为在 `site-header.tsx` 里用一个 `div` 同时包住 `<SiteNav />` 与按钮：
+
+```tsx
+<div className="flex shrink-0 items-center gap-2.5 sm:gap-[18px]">
+  <SiteNav />
+  <ToyButton href="/admin" size="small" variant="cream" rel="nofollow" aria-label="登录后台" className="shrink-0">
+    登录
+  </ToyButton>
+</div>
+```
+
+### 4. 复用 ToyButton，不新建按钮组件
+
+`ToyButton` 是项目唯一的按压结构（D-02）。`href` 分支渲染 `Next Link`，其 `AnchorProps = Omit<ComponentPropsWithoutRef<'a'>, ...>` 因此 `rel` 能透传。选定 `size="small"`（高 42px + 底座 7px = 实测 49px，满足 ≥44px 触控目标）与 `variant="cream"`（克制，不与主 CTA 的珊瑚色抢注意力）。
+
+`aria-label="登录后台"` 与可见文案「登录」并存的原因：可见文案太短，单靠它无法说明去向；`aria-label` 会覆盖可见文本成为可访问名称，所以写成「登录后台」比「登录」更准确。
+
+### 5. `rel="nofollow"` 的作用边界
+
+`app/robots.ts` 已 `disallow` 了 `/admin`，`rel="nofollow"` 是第二层提示，**不是保护**。它挡不住有意抓取，只减少无谓请求。真正的保护仍然是：后台每个 Server Action / Route Handler 独立鉴权、`(protected)/layout.tsx` 的 `requireAdmin()`、以及后台全量 `noindex,nofollow` + `middleware.ts` 的 `X-Robots-Tag`。
+
+因此这个按钮不构成新的攻击面：它只是一条指向已受保护区域的普通链接。
+
+### 6. 移动端布局
+
+`primaryNav` 的栏目链接本身在 `sm` 以下隐藏（既有行为，靠快捷入口与页脚导航）。按钮在 390px 下仍可见：实测 `w=54 h=49 left=322`，`scrollWidth=390 clientWidth=390`，无页面级横向溢出。`gap-2.5`（10px）在移动端比桌面的 `18px` 更紧，避免把品牌挤掉。
+
+### 7. 有意未做
+
+- **不显示登录态**：按钮固定文案「登录」，不做「后台」/「退出」。判断登录态需要 cookie，会让公开页变 Dynamic。
+- **不加退出入口**：退出在后台侧栏（POST Server Action），符合「退出不用可被预取的 GET」。
+- **不做下拉菜单**：只有一项，折叠没有收益。
+
+### 8. 验证
+
+**静态断言**（`.me/tmp/entry-check.mjs`，真实 `next start` + 真实 PostgreSQL，**50/50 PASS**）：
+
+- 五个公开页（`/`、`/about`、`/posts`、`/timeline`、`/stats`）各 9 项：返回 200、存在 `href="/admin"` 锚点、带 `rel="nofollow"`、带 `aria-label="登录后台"`、带 `toy-button` 类、内层无嵌套 `a`/`button`、主导航 landmark 存在、**主导航 landmark 内不含 `/admin`**、主导航仍含四个栏目链接；
+- `/admin` 未登录仍是 307 且 `location=/admin/login?next=%2Fadmin`，响应带 `X-Robots-Tag: noindex, nofollow`；
+- `/` 仍是预渲染静态页（`x-nextjs-cache: HIT`）；
+- `robots.txt` 仍 `Disallow: /admin`。
+
+**真实浏览器 DOM 断言**（`.me/tmp/dom-entry.mjs`，CDP 驱动系统无头 Edge，**13/13 PASS**）：
+
+- 390px：无横向溢出、按钮可见、高 49px ≥ 44px、落在视口内；
+- 键盘 Tab 可聚焦到该按钮，焦点环为 `solid 4px rgb(141, 209, 255)`（`--focus`，不是 none）；
+- 真实点击后落到 `http://127.0.0.1:3000/admin/login?next=%2Fadmin`；
+- 登录页有邮箱输入框、提交按钮、`noindex, nofollow`、「管理员登录」标题。
+
+**构建与回归**：
+
+| 项目 | 结果 |
+| --- | --- |
+| `npm run typecheck` | **0** |
+| `npm run build`（有库） | **0**，12 个静态页，`/` 仍 ○、`/posts/[slug]` 仍 ●、`/admin/*` 仍 ƒ |
+| `npm run build`（无 `DATABASE_URL`） | **0**，路由类型与有库完全一致 |
+| 既有回归 `.me/verify/e2e.mjs` | **32/32 PASS** |
+| `.next/static` 泄漏扫描 | **1 条**，仍是 `like-button.tsx` 的文案，良性 |
+| `%TSD` 加密扫描 | **0 命中** |
+
+### 9. 未验证范围
+
+- 未做视觉截图与人工审美验收（只有 DOM 边界值断言）。
+- 未在真实手机上验证，只用 CDP 的 390×844 视口模拟。
+- 未验证屏幕阅读器实际朗读顺序（只断言了 landmark 归属）。
+- 深色主题下按钮对比度未单独测算（沿用 `--cream` / `--cream-base` 既有色对，未新增色彩）。
