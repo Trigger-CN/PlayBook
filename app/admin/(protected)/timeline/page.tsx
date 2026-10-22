@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 
+import { Icon } from '@/components/ui/icon'
 import {
   listTimelineForAdmin,
   listTimelineInteractionCounts,
@@ -473,7 +474,7 @@ export default async function AdminTimelinePage({ searchParams }: Props) {
                         href={`/timeline/${item.id}`}
                         className="text-xs font-bold underline text-[var(--muted)]"
                       >
-                        查看公开页 ↗
+                        查看公开页 <Icon name="north_east" size={11} />
                       </Link>
                     ) : null}
                   </div>

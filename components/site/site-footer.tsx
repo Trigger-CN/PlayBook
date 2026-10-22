@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { Icon } from '@/components/ui/icon'
 import { primaryNav, siteConfig } from '@/config/site'
 
 /** 站点页脚（设计 module 02 §3.2）：版权、导航补充与社交链接。 */
@@ -28,7 +29,7 @@ export function SiteFooter() {
               rel="noopener noreferrer"
               className="hover:text-[var(--ink)]"
             >
-              {link.label} ↗
+              {link.label} <Icon name="north_east" size={11} />
             </a>
           ) : (
             <Link key={link.href} href={link.href} className="hover:text-[var(--ink)]">

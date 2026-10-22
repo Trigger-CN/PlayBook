@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { Icon } from '@/components/ui/icon'
 import { ToyButton } from '@/components/ui/toy-button'
 import type { LikeState, TargetType } from '@/lib/interactions/types'
 
@@ -139,7 +140,7 @@ export function LikeButton({ targetType, targetId, initial, enabled = true }: Pr
           state.liked ? `取消点赞，当前 ${state.count} 个赞` : `点赞，当前 ${state.count} 个赞`
         }
       >
-        <span aria-hidden="true">{state.liked ? '♥' : '♡'}</span> {label}
+        <Icon name={state.liked ? 'favorite' : 'heart_minus'} size={15} /> {label}
       </ToyButton>
 
       {/* 错误用 aria-live 播报，且不只依赖颜色（module 07 §8）。 */}

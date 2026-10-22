@@ -1,3 +1,4 @@
+import { Icon } from '@/components/ui/icon'
 import { siteConfig } from '@/config/site'
 
 export const metadata = {
@@ -22,7 +23,7 @@ export default function AboutPage() {
             transform: 'rotate(-3deg)',
           }}
         >
-          ☺
+          <Icon name="sentiment_satisfied" size={64} />
         </div>
         <div>
           <h1 className="font-display text-[clamp(32px,5vw,46px)] leading-tight">

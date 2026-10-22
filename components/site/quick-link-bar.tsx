@@ -1,9 +1,13 @@
+import { Icon } from '@/components/ui/icon'
 import { ToyButton } from '@/components/ui/toy-button'
 import { getEnabledQuickLinks } from '@/config/site'
 
 /**
  * 快捷入口阵列（设计 module 02 §3.3）。
  * 站内与站外链接共用 ToyButton，不在此重复任何按钮状态样式。
+ *
+ * 图标用 Material Symbols 内联 SVG（见 components/ui/icon.tsx），
+ * aria-hidden 由 Icon 自带 —— 标题文字才是可访问名称。
  */
 export function QuickLinkBar() {
   const quickLinks = getEnabledQuickLinks()
@@ -19,9 +23,7 @@ export function QuickLinkBar() {
           topClassName="h-[112px] flex-col items-start justify-between"
           {...(link.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
         >
-          <b aria-hidden="true" className="text-xl leading-none">
-            {link.icon}
-          </b>
+          <Icon name={link.icon} size={22} className="opacity-80" />
           <span>
             <b className="block text-base">{link.title}</b>
             {link.description ? (

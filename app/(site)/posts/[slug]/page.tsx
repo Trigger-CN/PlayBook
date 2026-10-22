@@ -5,6 +5,7 @@ import type { Metadata } from 'next'
 import { CommentSection } from '@/components/interactions/comment-section'
 import { LikeButton } from '@/components/interactions/like-button'
 import { ViewTracker } from '@/components/interactions/view-tracker'
+import { Icon } from '@/components/ui/icon'
 import { ToyButton } from '@/components/ui/toy-button'
 import { getDataPorts } from '@/lib/data'
 import { renderMdx } from '@/lib/content/mdx'
@@ -181,7 +182,7 @@ export default async function PostDetailPage({ params }: { params: Params }) {
 
           <div className="mt-9">
             <ToyButton href="/posts" size="small" variant="cream">
-              ← 返回文章列表
+              <Icon name="arrow_back" size={14} /> 返回文章列表
             </ToyButton>
           </div>
         </div>

@@ -1038,3 +1038,171 @@ Error: Cookies can only be modified in a Server Action or Route Handler.
 - 未在真实手机上验证，只用 CDP 的 390×844 视口模拟。
 - 未验证屏幕阅读器实际朗读顺序（只断言了 landmark 归属）。
 - 深色主题下按钮对比度未单独测算（沿用 `--cream` / `--cream-base` 既有色对，未新增色彩）。
+
+## D-19 文章列表整卡可点：stretched link 而非 `<a>` 包整卡
+
+**决策**：`/posts` 列表卡的根元素保持 `<article class="toy-card toy-card--pressable">`，主链接（标题）加 `toy-card__link` 类，用 `::after` 伪元素以 `inset: 0` 铺满整张卡，成为卡片唯一的可点主链接；卡内的次级链接（标签 chip）加 `toy-card__aside` 类并 `z-index: 1` 浮到覆盖层之上。
+
+### 1. 为什么不能用 `<a>` 包住整张卡
+
+列表卡里还有标签 chip 链接（`/posts?tag=...`）。`<a>` 嵌套 `<a>` 是**非法 HTML**，浏览器会把标签链接强行从外层锚点里拆出来，结构错乱，读屏与键盘焦点顺序都会坏掉。
+
+### 2. 为什么原有规则不生效（这是「整卡既不可点也没有按压反馈」的直接原因）
+
+`globals.css` 里 `.toy-card` 的交互规则只写成：
+
+```css
+a.toy-card:hover { ... }
+button.toy-card:hover { ... }
+a.toy-card:active { ... }
+button.toy-card:active { ... }
+```
+
+列表卡的根元素是 `<article>`，一条都不匹配。所以它既没有 hover 抬升，也没有 active 按压感。
+
+### 3. 新增的 CSS（与 `.toy-card` 圆角一致）
+
+```css
+.toy-card--pressable { position: relative; cursor: pointer; }
+.toy-card--pressable:hover { transform: translateY(-11px); box-shadow: 0 11px 0 var(--card-base); filter: brightness(1.02); }
+.toy-card--pressable:active { transform: translateY(-1px); box-shadow: 0 1px 0 var(--card-base); }
+.toy-card__link::after { content: ''; position: absolute; inset: 0; border-radius: 18px; }
+.toy-card__aside { position: relative; z-index: 1; }
+```
+
+- `.toy-card` 自身有 `transform`，已经是定位包含块；`.toy-card--pressable` 显式加 `position: relative` 更稳。
+- `border-radius: 18px` 与 `.toy-card` 一致，避免卡片四角外也响应点击。
+- **`.toy-card__aside` 的 `z-index: 1` 是必需项**，没有它标签 chip 永远点不到（会被 `inset: 0` 的覆盖层吃掉点击）。
+
+### 4. 验证
+
+真实无头 Edge + CDP，**12/12 PASS**，其中关键三条：
+
+- `document.elementFromPoint()` 探针在卡片右下角空白处命中主链接覆盖层：`hit=A href=/posts/playful-recorder`。
+- 真实鼠标点击卡片空白处，跳转到 `/posts/playful-recorder`（与卡片主链接一致）。
+- 真实鼠标点击标签 chip，跳到 `/posts?tag=设计系统`（走筛选而非详情）。
+
+### 5. 写 CSS 产物断言必须注意
+
+cssnano/PostCSS 会把 `::after` 规范化为单冒号，产物里是 `.toy-card__link:after`。断言必须写成 `/\.toy-card__link:{1,2}after/`，不能写死双冒号 —— 否则会得到假失败。
+
+---
+
+## D-20 图标用 Material Symbols 的**内联 SVG**，不引 Google Fonts 字体
+
+**决策**：图标数据取自 https://fonts.google.com/icons 的 Material Symbols（Outlined），但以**内联 SVG path** 形式内置在 `components/ui/icon.tsx`（24 个图标，`iconPaths` 常量表 + `<Icon>` 组件），**不引 Material Symbols 字体、不引任何 CDN**。
+
+### 1. 为什么不引字体（四条理由）
+
+1. **外部字体要请求 `fonts.googleapis.com`**，属第三方请求 —— 隐私与可用性都变差；离线或内网环境下图标会退化成连字文本（把 `home` 直接显示成单词）。
+2. **字体加载有 FOUT**，首屏会闪一下连字名。
+3. **字体要下整个子集**才能覆盖若干图标；内联 SVG 每个只有几十到几百字节，并且天然跟随 `currentColor`，明暗主题不用额外处理。
+4. **保持零运行时依赖、零外部请求**，静态生成与 CSP 都不受影响。这是 REQ-NFR-001 的直接要求。
+
+### 2. path 数据来源（Apache-2.0）
+
+取自 `google/material-design-icons` 仓库，两个 URL 内容一致：
+
+- `https://raw.githubusercontent.com/google/material-design-icons/master/symbols/web/<name>/materialsymbolsoutlined/<name>_24px.svg`（主源）
+- `https://fonts.gstatic.com/s/i/short-term/release/materialsymbolsoutlined/<name>/default/24px.svg`（备用源，GitHub raw 偶发 `UND_ERR_CONNECT_TIMEOUT`）
+
+### 3. 两个真实的坑（必须记住，否则图标会「看起来像空白」）
+
+#### 坑一：Material Symbols 有**两套坐标系**
+
+- 绝大多数新版图标输出 `viewBox="0 -960 960 960"`（坐标系整体上移 960）。
+- `insights` 与 `auto_awesome` 这类旧式图标**源 SVG 压根没有 `viewBox` 属性**，只有 `height="24" width="24"`，坐标系是 `0 0 24 24`。
+
+**写死任何一个都会让另一类图标整体偏移出画面。** 正确读法：
+
+```js
+const explicitViewBox = svg.match(/viewBox="([^"]+)"/)?.[1]
+const width = svg.match(/\swidth="([0-9.]+)"/)?.[1] ?? '24'
+const height = svg.match(/\sheight="([0-9.]+)"/)?.[1] ?? '24'
+const viewBox = explicitViewBox ?? `0 0 ${width} ${height}`
+```
+
+`<Icon>` 组件因此**逐图标取 viewBox**，不写默认值。
+
+#### 坑二：`favorite_border` 在 Symbols 里不存在（404）
+
+Material **Icons** 用 `_border` 后缀表示空心态；Material **Symbols** 用**可变字重**（`FILL 0/1`、`wght`）表达填充度，**没有 `_border` 系列**。所以点赞按钮用 `heart_minus` / `heart_plus`（空心）与 `favorite`（实心），不用 `favorite_border`。
+
+### 4. 校验脚本的两个细节
+
+- **path 起始绝对移动命令的坐标必须落在 viewBox 内**。不能「把所有数字都当坐标」——相对坐标（如 `-.825`）会被误判成越界。
+- **正则第二个数前的分隔符是可选的**：`/^[Mm]\s*(-?[\d.]+)[\s,]?(-?[\d.]+)/`。因为 SVG path 允许 `M160-400` 这种省略分隔符的写法（`edit_note` 就是这样）。
+
+### 5. 组件不变量
+
+`<Icon>` 一律输出 `aria-hidden="true"` + `focusable="false"`；**语义必须由旁边的文字或调用处的 `aria-label` 承担**。这符合设计 module 02 §7「图标缺失时仍有文字」—— 两者必须同时出现，不允许只渲染图标。
+
+### 6. 落地范围（17 个文件）
+
+| 位置 | 图标 |
+| --- | --- |
+| `config/timeline.ts`（6 个类型） | `edit_note` / `emoji_events` / `folder_special` / `rocket_launch` / `flight` / `menu_book` |
+| `config/site.ts`（6 个快捷入口） | `article` / `timeline` / `insights` / `person` / `north_east` / `rss_feed` |
+| `components/site/quick-link-bar.tsx` | 由 `link.icon` 驱动 |
+| `components/timeline/timeline-card.tsx` | 由 `typeStyle.icon` 驱动 |
+| `components/ui/theme-toggle.tsx` | `light_mode` / `dark_mode` |
+| `components/site/site-header.tsx` | 品牌标记 `auto_awesome`（**视觉改变，不是纯替换**：原来是 `border-[3px]` 空心圆） |
+| `components/site/site-footer.tsx` | `north_east` |
+| `components/interactions/like-button.tsx` | `favorite` / `heart_minus` |
+| `app/(site)/about/page.tsx` | `sentiment_satisfied`（64px） |
+| `app/(site)/posts/page.tsx` | 占位 `auto_awesome` + 分页 `arrow_back` / `arrow_forward` |
+| `app/(site)/page.tsx` | 占位 `auto_awesome` + `arrow_forward` / `auto_awesome` |
+| `app/(site)/posts/[slug]/page.tsx` | `arrow_back` |
+| `app/(site)/timeline/[id]/page.tsx` | `north_east` / `north` / `south` / `arrow_back`，**以及类型徽标由 `typeStyle.icon` 驱动** |
+| `app/admin/(protected)/layout.tsx` | `north_east` |
+| `app/admin/(protected)/posts/post-editor.tsx` | `arrow_back` |
+| `app/admin/(protected)/timeline/page.tsx` | `north_east` |
+| `app/admin/(protected)/page.tsx` | `arrow_forward` |
+
+`open_in_new` 已抓取但当前没有使用者（刻意保留，后续加图标不必重跑生成脚本）。
+
+### 7. 验证
+
+真实无头 Edge + CDP（系统 Edge `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`，`--headless=new`）。
+
+**种子数据实例（无 `DATABASE_URL`）：15/15 PASS**
+
+- 首页 6 个快捷入口各有 1 个内联 SVG。
+- 首页全部 SVG 的 `path d` 非空、渲染尺寸非零（`bad=0`、`zero=0`）。
+- **SVG 的 viewBox 同时出现 `0 0 24 24` 与 `0 -960 960 960` 两种** —— 证明逐图标取 viewBox 生效。
+- `document.body.innerText` 无残留字符图标（`✹ ☼ ☾ ♥ ♡ ☺ ↗ ← → ↑ ↓ ▤ ◌ ◒ ◍ ✎ ✦ ◆ ▲ ➤ ❏` 全部 0 命中）。
+- `innerText` 无 Material Symbols 连字名（`auto_awesome` / `arrow_back` / `light_mode` 等）—— 证明没有悄悄退化成字体。
+- 主题开关按钮内 2 个 SVG；页头品牌标记 1 个 SVG。
+- 文章列表卡占位区是 `auto_awesome`，且卡片仍只有一个主链接 `toy-card__link`。
+- 详情页返回链接含 1 个 `arrow_back`。
+- 时间轴 14 张卡片的类型徽标各含 1 个 SVG 且带类型文字。
+- 390px 视口下 SVG 仍有非零尺寸、无横向溢出。
+- 页面 HTML 不含 `fonts.googleapis.com` / `fonts.gstatic.com`，也没有 `material-symbols` / `material-icons` 类名。
+
+**有库实例：14/15 PASS** —— 唯一未过的是「时间轴徽标」，因为 `timeline_items` 表当前为空，页面渲染「共 0 条记录」。这不是图标缺陷，时间轴图标已在种子实例上单独验证（7/7 PASS）。
+
+**构建**
+
+| 项 | 结果 |
+| --- | --- |
+| `npm run typecheck` | **0** |
+| `build`（有库） | **0**，13 个静态页，路由类型不退化 |
+| `build`（无 `DATABASE_URL`） | **0**，26 个静态页（种子数据），路由类型一致 |
+| `.next/static` 泄漏扫描 | **1 条**，仍是 `like-button.tsx` 的文案，良性 |
+| `%TSD` 加密扫描 | **0 命中** |
+
+路由矩阵（有库）：`/`、`/about`、`/timeline`、`/robots.txt`、`/rss.xml`、`/sitemap.xml`、`/stats` 为 ○ Static；`/posts/[slug]`、`/timeline/[id]` 为 ● SSG；`/posts`、`/admin/*`、`/api/*` 为 ƒ Dynamic。共享 First Load JS **103 kB** 未变。
+
+### 8. 本次验证抓到的一个真实遗漏
+
+`app/(site)/timeline/[id]/page.tsx` 第 99 行原本仍是 `<span aria-hidden="true">{typeStyle.icon}</span>`。由于 `typeStyle.icon` 从字符变成了 `'rocket_launch'` 这类图标名，这一行会把裸图标名当文本渲染出来。已改为 `<Icon name={typeStyle.icon} size={12} />`。
+
+**教训**：把「字符字段」改成「图标名字段」时，必须全仓扫描该字段的**每一个**渲染点（`{typeStyle.icon}` / `{link.icon}` / `{item.icon}` / `{tone.icon}`），不能只改记得住的那几处。`typecheck` 抓不到这种漏改 —— 字符串渲染字符串，类型完全合法。**只有真实浏览器断言 `innerText` 才能发现它。**
+
+### 9. 未验证范围
+
+- 未做视觉截图与人工审美验收（只有 DOM 与几何断言）。
+- 未测屏幕阅读器实际朗读顺序（只断言了 `aria-hidden` 与语言文本共存）。
+- 深色主题下新图标对比度未单独测算（图标用 `currentColor` 继承文字色，理论上与文字一致，但无实测数据）。
+- 未在真实手机上验证，只用 CDP 的 390×844 视口模拟。
+- `insights` / `auto_awesome` 使用 24×24 坐标系，在同等 `size` 下视觉重量与 960×960 坐标系图标可能略有差异 —— 属视觉问题，未量化。

@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
+import { Icon } from '@/components/ui/icon'
 import { ToyButton } from '@/components/ui/toy-button'
 import { getDataPorts } from '@/lib/data'
 
@@ -98,10 +99,10 @@ export default async function PostsPage({ searchParams }: { searchParams: Search
                 <div className="grid gap-4 sm:grid-cols-[130px_1fr]">
                   <div
                     aria-hidden="true"
-                    className="grid min-h-[96px] place-items-center rounded-[13px] text-4xl"
+                    className="grid min-h-[96px] place-items-center rounded-[13px]"
                     style={{ background: 'var(--cream)' }}
                   >
-                    ✹
+                    <Icon name="auto_awesome" size={36} />
                   </div>
                   <div>
                     <div className="text-xs font-bold text-[var(--muted)]">
@@ -141,7 +142,7 @@ export default async function PostsPage({ searchParams }: { searchParams: Search
                   size="small"
                   variant="cream"
                 >
-                  ← 上一页
+                  <Icon name="arrow_back" size={14} /> 上一页
                 </ToyButton>
               ) : null}
               <span className="text-[13px] font-bold text-[var(--muted)]">
@@ -153,7 +154,7 @@ export default async function PostsPage({ searchParams }: { searchParams: Search
                   size="small"
                   variant="cream"
                 >
-                  下一页 →
+                  下一页 <Icon name="arrow_forward" size={14} />
                 </ToyButton>
               ) : null}
             </nav>

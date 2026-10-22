@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
+import { Icon } from '@/components/ui/icon'
 import { requireAdmin, isAdminConfigured } from '@/lib/auth/admin'
 import { hasDatabaseUrl } from '@/lib/data'
 
@@ -78,7 +79,7 @@ export default async function ProtectedAdminLayout({
               后台
             </Link>
             <Link href="/" className="text-xs font-bold text-[var(--muted)] hover:text-[var(--ink)]">
-              查看站点 ↗
+              查看站点 <Icon name="north_east" size={11} />
             </Link>
           </div>
 

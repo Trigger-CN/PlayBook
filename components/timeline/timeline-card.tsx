@@ -1,3 +1,4 @@
+import { Icon } from '@/components/ui/icon'
 import { ToyCard } from '@/components/ui/toy-card'
 import { timelineTypeStyles } from '@/config/timeline'
 import type { TimelineItem } from '@/lib/timeline/types'
@@ -27,7 +28,7 @@ export function TimelineCard({ item, className }: TimelineCardProps) {
           className="inline-flex items-center gap-1 rounded-full px-2 py-[3px] text-[11px] font-extrabold"
           style={{ background: `var(--${typeStyle.tone})`, color: '#211522' }}
         >
-          <span aria-hidden="true">{typeStyle.icon}</span>
+          <Icon name={typeStyle.icon} size={13} />
           {typeStyle.label}
         </span>
       </div>

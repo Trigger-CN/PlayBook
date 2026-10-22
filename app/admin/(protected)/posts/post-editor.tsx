@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useActionState, useEffect, useState } from 'react'
 
+import { Icon } from '@/components/ui/icon'
 import { ToyButton } from '@/components/ui/toy-button'
 
 import { savePostAction } from './actions'
@@ -386,7 +387,7 @@ export function PostEditor({
         </p>
 
         <Link href="/admin/posts" className="text-xs font-bold text-[var(--muted)] underline">
-          ← 返回文章列表
+          <Icon name="arrow_back" size={12} /> 返回文章列表
         </Link>
       </aside>
     </form>

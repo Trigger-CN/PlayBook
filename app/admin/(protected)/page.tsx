@@ -8,6 +8,7 @@ import {
   listPostsForAdmin,
   listRecentComments,
 } from '@/lib/admin/repository'
+import { Icon } from '@/components/ui/icon'
 import { StatBlock } from '@/components/ui/stat-block'
 
 /**
@@ -108,7 +109,7 @@ export default async function AdminDashboardPage() {
                 >
                   <span style={{ color: '#2a2118' }}>{todo.label}</span>
                   <span aria-hidden="true" style={{ color: '#2a2118' }}>
-                    去处理 →
+                    去处理 <Icon name="arrow_forward" size={13} />
                   </span>
                 </Link>
               </li>
@@ -277,7 +278,9 @@ export default async function AdminDashboardPage() {
                 <b>{entry.action}</b>
                 <span className="text-[var(--muted)]">{entry.actorEmail}</span>
                 {entry.targetId ? (
-                  <span className="text-[var(--muted)]">→ {entry.targetId}</span>
+                  <span className="inline-flex items-center gap-1 text-[var(--muted)]">
+                    <Icon name="arrow_forward" size={11} /> {entry.targetId}
+                  </span>
                 ) : null}
                 <time dateTime={entry.createdAt} className="ml-auto text-[var(--muted)]">
                   {formatTime(entry.createdAt)}

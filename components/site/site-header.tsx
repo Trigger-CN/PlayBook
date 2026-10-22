@@ -1,6 +1,7 @@
 import Link from 'next/link'
 
 import { SiteNav } from '@/components/site/site-nav'
+import { Icon } from '@/components/ui/icon'
 import { ToyButton } from '@/components/ui/toy-button'
 import { siteConfig } from '@/config/site'
 
@@ -27,10 +28,7 @@ export function SiteHeader() {
             transform: 'rotate(-7deg)',
           }}
         >
-          <span
-            className="block h-[15px] w-[15px] rounded-full border-[3px]"
-            style={{ borderColor: 'var(--ink)' }}
-          />
+          <Icon name="auto_awesome" size={15} />
         </span>
         {siteConfig.name}
       </Link>

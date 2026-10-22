@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation'
 import { CommentSection } from '@/components/interactions/comment-section'
 import { LikeButton } from '@/components/interactions/like-button'
 import { ViewTracker } from '@/components/interactions/view-tracker'
+import { Icon } from '@/components/ui/icon'
 import { ToyButton } from '@/components/ui/toy-button'
 import { ToyCard } from '@/components/ui/toy-card'
 import { timelineTypeStyles } from '@/config/timeline'
@@ -95,7 +96,7 @@ export default async function TimelineDetailPage({ params }: TimelineDetailProps
             className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-extrabold"
             style={{ background: `var(--${typeStyle.tone})`, color: '#211522' }}
           >
-            <span aria-hidden="true">{typeStyle.icon}</span>
+            <Icon name={typeStyle.icon} size={12} />
             {typeStyle.label}
           </span>
           <time dateTime={item.occurredAt} className="text-xs font-bold text-[var(--muted)]">
@@ -145,7 +146,7 @@ export default async function TimelineDetailPage({ params }: TimelineDetailProps
             target="_blank"
             rel="noopener noreferrer"
           >
-            查看相关链接 ↗
+            查看相关链接 <Icon name="north_east" size={16} />
           </ToyButton>
           {host ? <p className="mt-2 text-xs text-[var(--muted)]">{host}</p> : null}
         </div>
@@ -166,7 +167,9 @@ export default async function TimelineDetailPage({ params }: TimelineDetailProps
             base="cream"
             className="min-w-[240px] flex-1 p-4"
           >
-            <span className="text-xs font-bold text-[var(--muted)]">↑ 更新的一条</span>
+            <span className="inline-flex items-center gap-1 text-xs font-bold text-[var(--muted)]">
+              <Icon name="north" size={13} /> 更新的一条
+            </span>
             <p className="mt-1 font-display text-base leading-snug">
               {newer.title ?? timelineTypeStyles[newer.type].label}
             </p>
@@ -178,7 +181,9 @@ export default async function TimelineDetailPage({ params }: TimelineDetailProps
             base="cream"
             className="min-w-[240px] flex-1 p-4"
           >
-            <span className="text-xs font-bold text-[var(--muted)]">↓ 更早的一条</span>
+            <span className="inline-flex items-center gap-1 text-xs font-bold text-[var(--muted)]">
+              <Icon name="south" size={13} /> 更早的一条
+            </span>
             <p className="mt-1 font-display text-base leading-snug">
               {older.title ?? timelineTypeStyles[older.type].label}
             </p>
@@ -188,7 +193,7 @@ export default async function TimelineDetailPage({ params }: TimelineDetailProps
 
       <div className="mt-10">
         <ToyButton href="/timeline" variant="cream">
-          ← 回到时间轴
+          <Icon name="arrow_back" size={16} /> 回到时间轴
         </ToyButton>
       </div>
     </article>

@@ -1,3 +1,5 @@
+import type { IconName } from '@/components/ui/icon'
+
 /** 站点身份与导航配置（设计 module 02 / 决策 D-09）。 */
 
 export type SiteConfig = {
@@ -21,7 +23,8 @@ export type PrimaryNavItem = {
 export type QuickLink = {
   title: string
   href: string
-  icon: string
+  /** Material Symbols 图标名（内联 SVG，见 components/ui/icon.tsx）。 */
+  icon: IconName
   description?: string
   order: number
   external: boolean
@@ -50,12 +53,12 @@ export const primaryNav: PrimaryNavItem[] = [
 
 /** 快捷入口按 order 排序，只渲染 enabled 项（设计 module 02 §3.3）。 */
 export const quickLinks: QuickLink[] = [
-  { title: '文章', href: '/posts', icon: '▤', description: '最近写作', order: 10, external: false, enabled: true },
-  { title: '时间轴', href: '/timeline', icon: '◌', description: '生活记录', order: 20, external: false, enabled: true },
-  { title: '统计', href: '/stats', icon: '◒', description: '站点活跃', order: 30, external: false, enabled: true },
-  { title: '关于我', href: '/about', icon: '⌁', description: '一点自述', order: 40, external: false, enabled: true },
-  { title: 'GitHub', href: 'https://github.com', icon: '↗', description: '开放代码', order: 50, external: true, enabled: true },
-  { title: 'RSS', href: '/feed.xml', icon: '◍', description: '订阅更新', order: 60, external: false, enabled: true },
+  { title: '文章', href: '/posts', icon: 'article', description: '最近写作', order: 10, external: false, enabled: true },
+  { title: '时间轴', href: '/timeline', icon: 'timeline', description: '生活记录', order: 20, external: false, enabled: true },
+  { title: '统计', href: '/stats', icon: 'insights', description: '站点活跃', order: 30, external: false, enabled: true },
+  { title: '关于我', href: '/about', icon: 'person', description: '一点自述', order: 40, external: false, enabled: true },
+  { title: 'GitHub', href: 'https://github.com', icon: 'north_east', description: '开放代码', order: 50, external: true, enabled: true },
+  { title: 'RSS', href: '/feed.xml', icon: 'rss_feed', description: '订阅更新', order: 60, external: false, enabled: true },
 ]
 
 export function getEnabledQuickLinks(): QuickLink[] {

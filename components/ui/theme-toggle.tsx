@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 
+import { Icon } from '@/components/ui/icon'
 import { THEME_COOKIE, type Theme } from '@/lib/theme-shared'
 
 function readThemeFromDom(): Theme {
@@ -56,10 +57,10 @@ export function ThemeToggle() {
       />
       <span
         aria-hidden="true"
-        className="absolute inset-0 flex items-center justify-between rounded-full px-2 py-1 text-[13px] transition-transform active:translate-y-[3px]"
+        className="absolute inset-0 flex items-center justify-between rounded-full px-2 py-1 transition-transform active:translate-y-[3px]"
         style={{ background: 'var(--pink)', color: '#28152b' }}
       >
-        ☼
+        <Icon name="light_mode" size={14} />
         <span
           className="h-[27px] w-[27px] rounded-full transition-transform duration-200"
           style={{
@@ -68,7 +69,7 @@ export function ThemeToggle() {
             transform: isNight && mounted ? 'translateX(27px)' : 'translateX(0)',
           }}
         />
-        ☾
+        <Icon name="dark_mode" size={14} />
       </span>
     </button>
   )

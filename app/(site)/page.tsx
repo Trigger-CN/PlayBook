@@ -5,6 +5,7 @@ import { ActivityFeed } from '@/components/site/activity-feed'
 import { QuickLinkBar } from '@/components/site/quick-link-bar'
 import { TimelineCard } from '@/components/timeline/timeline-card'
 import { StatBlock } from '@/components/ui/stat-block'
+import { Icon } from '@/components/ui/icon'
 import { ToyButton } from '@/components/ui/toy-button'
 import { ToyCard } from '@/components/ui/toy-card'
 import { siteConfig } from '@/config/site'
@@ -61,9 +62,9 @@ export default async function HomePage() {
             {siteConfig.bio}
           </p>
           <div className="mt-7 flex flex-wrap gap-4">
-            <ToyButton href="/posts">开始阅读 →</ToyButton>
+            开始阅读 <Icon name="arrow_forward" size={17} />
             <ToyButton href="/about" variant="pink">
-              关于我 ✦
+              关于我 <Icon name="auto_awesome" size={17} />
             </ToyButton>
           </div>
         </div>
@@ -113,7 +114,7 @@ export default async function HomePage() {
             最近文章
           </h2>
           <Link href="/posts" className="text-sm font-bold text-[var(--muted)] hover:text-[var(--ink)]">
-            查看全部 →
+            查看全部 <Icon name="arrow_forward" size={14} />
           </Link>
         </div>
 
@@ -136,10 +137,10 @@ export default async function HomePage() {
                 <div className="grid gap-4 sm:grid-cols-[145px_1fr]">
                   <div
                     aria-hidden="true"
-                    className="grid min-h-[100px] place-items-center rounded-[13px] text-5xl"
+                    className="grid min-h-[100px] place-items-center rounded-[13px]"
                     style={{ background: 'var(--cream)' }}
                   >
-                    ✹
+                    <Icon name="auto_awesome" size={40} />
                   </div>
                   <div>
                     <div className="text-xs font-bold text-[var(--muted)]">
@@ -174,7 +175,7 @@ export default async function HomePage() {
             href="/timeline"
             className="text-sm font-bold text-[var(--muted)] hover:text-[var(--ink)]"
           >
-            查看全部 →
+            查看全部 <Icon name="arrow_forward" size={14} />
           </Link>
         </div>
 
