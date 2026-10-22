@@ -625,7 +625,7 @@ Node 20 起（CVE-2024-27980 修复后）`child_process` 不再允许直接 spaw
 这种「成功了却像失败」最难判断——很容易误以为启动失败而反复重试，甚至去删数据目录。修法：
 
 1. `spawn` + `stdio: 'ignore'` 彻底断开输出管道（`detached` + `unref` 让 node 不因子进程而保持存活）；
-2. **用 TCP 端口轮询判断就绪**（`net.Socket` 连 `127.0.0.1:PORT`，800ms 超时，30s 总窗口，400ms 间隔），不依赖 pg_ctl 的退出码——「端口是否在监听」不会说谎。
+2. 不依赖 pg_ctl 的退出码，而是自己探测就绪。当时用的是 TCP 端口轮询（`net.Socket` 连 `127.0.0.1:PORT`），后来发现那个判据不够——端口在监听并不等于数据库能服务查询，见「附：D-16 加固」。现已改为真实 SQL 往返。
 
 **缺陷三：平台包只带 `initdb` / `pg_ctl` / `postgres`，没有 `psql` 与 `createdb`。**
 
@@ -669,3 +669,112 @@ Node 20 起（CVE-2024-27980 修复后）`child_process` 不再允许直接 spaw
 - 未验证「关掉终端后实例继续运行」的跨会话持久性（只验证了命令立即返回且端口监听）
 - 未验证开机自启（本项不提供，需用户自己把 `db:start` 加进启动项）
 - 未验证数据目录在磁盘满 / 异常断电后的恢复能力
+
+---
+
+## 附：D-16 加固（僵尸实例与孤儿进程）
+
+这一节记录一次真实事故：数据库「端口开着却连不上」，而当时所有检查手段都显示它正常。
+
+### 现象
+
+首页渲染时抛出：
+
+```
+[db] 查询失败：Connection terminated due to connection timeout
+    at query (lib/db/query.ts:30:11)
+    at Object.list (lib/data/adapters/postgres.ts:161:25)
+    at HomePage (app/(site)/page.tsx:27:64)
+```
+
+同时 `pg_ctl status` 说「在运行」，`Test-NetConnection 127.0.0.1 -Port 5432` 返回 `True`。
+
+### 根因
+
+崩溃恢复中途被中断（终端里的 Ctrl+C 打到了 postgres 进程组），日志留下这几行：
+
+```
+LOG:  terminating any other active server processes
+LOG:  all server processes terminated; reinitializing
+LOG:  database system was interrupted; last known up at 2026-10-21 20:47:33 CST
+LOG:  shutting down
+^C
+```
+
+postmaster（PID 26640）在恢复完成前就死了，但它 fork 出的一个后台 worker（PID 63392，命令行 `--forkchild="io_worker" 3148`）活了下来，并**继承了监听 socket**。
+
+于是：
+
+- 5432 依然 TCP 可连 —— 连接被内核 accept 队列接住；
+- 没有任何进程去 accept —— 查询发出去永远没有回应；
+- 客户端等到超时，报 `Connection terminated due to connection timeout`。
+
+`postmaster.pid` 里还写着 `26640` 与 `ready`，而那个 PID 早已不存在。
+
+**为什么这个状态特别难识别**：三个常用判据全部失效。
+
+| 判据 | 在僵尸态下的结果 |
+| --- | --- |
+| `pg_ctl status` | 只看 pid 文件，返回「在运行」 |
+| TCP 端口探测 | 端口确实在监听，返回 `true` |
+| `postgres.exe` 进程数 | 是 1 而不是 0，看起来「至少还活着」 |
+
+真正的判据只有一个：**能不能在一个往返内拿到 SQL 结果**。
+
+### 当时为什么会「修好」成假的
+
+`db:start` 的就绪判据是 TCP 端口轮询。孤儿 worker 占着端口，于是 `waitForPort()` 立刻成功，脚本打印「已启动」——**而数据库其实从头到尾都没起来过**。`server.log` 在崩溃那一刻之后再没有任何新行，这是最直接的证据。
+
+这和「缺陷二」是同一类错误的镜像：那次是「成功了却像失败」，这次是「失败了却像成功」。两者都源于**用间接指标代替真实行为**。
+
+### 加固后的判据与清理规则
+
+新增 `scripts/lib/pg-runtime.mjs`，把运行时探测与清理集中到一处，`db:start` / `db:stop` 共用（此前两边各写一份 `findBinDir` / `exists`，已经开始漂移）。
+
+**就绪判据改为真实 SQL 往返**（`probeSql`）：用项目已有的 `pg` 客户端连维护库 `postgres` 执行 `select 1`，`connectionTimeoutMillis` 与 `query_timeout` 都设为 2.5 秒。连维护库而不是业务库，因为 `db:start` 可能早于 `db:migrate`，那时 `playbook` 还不存在。`pg` 的 `connectionTimeoutMillis` 覆盖整个启动握手（含认证），所以对端不回应时它会直接抛错，而不是一直挂着。
+
+**孤儿识别从端口反查**（`findPortListeners` → `describeProcess`）：孤儿只认 socket，所以「谁在监听这个端口」是唯一可靠的识别方向。Windows 用 `Get-NetTCPConnection -LocalPort N -State Listen`，POSIX 用 `lsof -nP -iTCP:N -sTCP:LISTEN -t`。
+
+**只在两种情况下杀进程**（`clearPortHolders`）：
+
+1. 它就是 `postmaster.pid` 记录的那个 PID（本实例的 postmaster，只是已经不能服务查询）；
+2. 它的父进程已经不存在（孤儿）。
+
+其它 `postgres.exe` 只报告、不动手。端口被别的实例占着是配置问题，替用户杀掉别人的数据库不是这个脚本该做的决定——遇到这种情况脚本会以非 0 退出并打印占用 PID。
+
+**陈旧 `postmaster.pid` 只在记录的 PID 已不存在时删**（`removeStalePidFile`）：PID 还活着说明那确实是个运行中的实例，删掉 pid 文件会让后续 `pg_ctl` 彻底失去对它的追踪。
+
+**`db:start` 的启动前决策**：
+
+| 探测结果 | 动作 |
+| --- | --- |
+| SQL 通 | 什么都不做（重复执行安全） |
+| 端口有监听但 SQL 不通 | 僵尸：先 `-m fast` 尝试正常停止，再清孤儿、删陈旧 pid，然后启动 |
+| `postmaster.pid` 指向的进程已不存在 | 陈旧文件：清理后启动 |
+| pid 进程还在但端口没监听 | 半死：清理后启动 |
+
+**`db:stop` 的收尾**：`pg_ctl status` 只认 pid 文件，所以无论正常停止还是判定「未在运行」，结束后都要再从端口反查一次并清一次。正常停止时这两步都是空操作。
+
+### 验证
+
+| 场景 | 结果 |
+| --- | --- |
+| 加固前 `npm run db:health` | `[db:health] timeout expired`，`pg=1` |
+| 加固后 `npm run db:health` | `连接成功，耗时 153 ms`、`PostgreSQL 18.4`、`已应用迁移 9 个`、`schema 自检通过`，`pg=9` |
+| 首页（真实 `DATABASE_URL`） | `200`、`len=81575`、无「查询失败」、含 `playful-recorder` |
+| `/posts`、`/posts/playful-recorder`、`/timeline`、`/stats`、`/rss.xml`、`/sitemap.xml` | 全部 `200` |
+| 端到端 `.me/verify/e2e.mjs` | `TOTAL=32 PASS=32 FAIL=0` |
+| 正常 stop → start 往返 | `已停止`（`pg=0`、5432 无监听、pid 文件消失）→ `已启动`（`pg=9`）；`db:health` 通 |
+| 重复 `db:stop` | `未在运行`，exit 0 |
+| 重复 `db:start` | `已在运行：…`，`pg` 仍为 9，未启动第二个实例 |
+| 陈旧 `postmaster.pid`（记录的 PID 已死） | `检测到异常状态：postmaster.pid 指向的进程已不存在` → `已删除陈旧的 postmaster.pid` → 启动成功；pid 文件首行由 57692 变为新 PID |
+| 端口被非 postgres 进程占用 | exit **1**，`端口 5432 上仍有未能清理的进程（PID 21624）`；该进程**未被杀**（仍存活），也未启动 postgres（`pg=0`） |
+| 僵尸态（端口监听、查询挂死） | `db:health` → `timeout expired`；`db:start` → `检测到异常状态：端口 5432 有监听，但查询没有响应` → `已结束占用端口的 postgres 进程：24804` → `已删除陈旧的 postmaster.pid` → 启动成功；`db:health` 通 |
+
+僵尸态是**故意构造**的：用 `NtSuspendProcess` 挂起 postmaster，让它继续占着监听 socket 但不再回应任何请求。这样复现出来的症状与真实事故一致（`pg=9`、端口在监听、`db:health` 报 `timeout expired`），但不必真的打断一次崩溃恢复。
+
+### 未验证范围
+
+- 孤儿清理的 POSIX 分支（`lsof` + `ps`）**未在 macOS / Linux 上实测**，只在 Windows 上跑过。
+- 「端口被非 postgres 程序占用」的告警分支只验证了代码路径，未构造真实的端口冲突。
+- 加固只覆盖「进程层面」的异常。数据目录在磁盘满 / 异常断电后的恢复能力仍未验证——本轮事故正属此类，脚本只能清理，不能保证数据完整性。

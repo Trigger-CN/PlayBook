@@ -16,6 +16,8 @@ npm run db:stop      # 不用时：停止
 
 `db:setup` 结束时会把需要写进 `.env.local` 的两行直接打印出来。
 
+`db:start` 的「就绪」以**真实 SQL 查询**（`select 1`）为准，不是「端口在监听」—— 端口能连上不等于数据库能服务查询，这两件事在崩溃恢复被打断后会分家。
+
 ### 环境变量
 
 在项目根目录新建 `.env.local`（该文件已被 `.gitignore` 排除，不会进仓库）：
@@ -82,9 +84,13 @@ PGPORT=5433 npm run db:setup     # Windows PowerShell: $env:PGPORT=5433; npm run
 
 **`spawn EINVAL`** —— Node 20 起不允许直接 spawn `.cmd`。已在 `db-setup.mjs` 里用 `shell: true` 处理；若你改了脚本，注意这一点。
 
-**`db:start` 看起来卡住不还提示符** —— 已修复。原因是在 Windows 上 `pg_ctl` 启动的 postgres 会继承父进程的输出管道，`execFile` 的 Promise 永不 resolve，而数据库其实已经起来了。现在改用 `spawn` + `stdio: 'ignore'`，并用 TCP 端口轮询判断就绪。
+**`db:start` 看起来卡住不还提示符** —— 已修复。原因是在 Windows 上 `pg_ctl` 启动的 postgres 会继承父进程的输出管道，`execFile` 的 Promise 永不 resolve，而数据库其实已经起来了。现在改用 `spawn` + `stdio: 'ignore'`，并用真实 SQL 查询判断就绪。
 
 **`db:start` 报「启动超时」** —— 看 `.me/pg/server.log` 末尾。常见原因：5432 被占用（换端口）、数据目录损坏（删 `.me/pg` 重跑 `db:setup`）。
+
+**连接超时：`Connection terminated due to connection timeout`（端口开着却连不上）** —— 实例的崩溃恢复中途被打断时，postmaster 会死掉，但它 fork 出的后台 worker 会活下来并**继承监听 socket**：端口依然 TCP 可连（连接被内核 accept 队列接住），却没有任何进程去 accept，于是每个查询都挂到超时。这种状态 `pg_ctl status`（只看 pid 文件）和端口探测都看不出来。
+
+现在 `db:start` 会自动识别并清理它（结束孤儿进程 + 删除陈旧 `postmaster.pid`）后重新启动，所以通常再跑一次 `npm run db:start` 就恢复了。如果它报「端口 5432 上仍有未能清理的进程」，说明占端口的是非 postgres 程序或另一个实例 —— 脚本不会替你杀掉别人的进程，需要手工处理：`Get-NetTCPConnection -LocalPort 5432 -State Listen` 查 PID。
 
 **想彻底重来** —— `npm run db:stop`，删除 `.me/pg`，重新 `npm run db:setup && npm run db:start && npm run db:migrate && npm run db:import`。
 

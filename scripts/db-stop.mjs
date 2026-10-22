@@ -8,50 +8,35 @@
  * 用 `-m fast`（默认）：断开现有连接后立即关闭，不丢已提交的事务。
  * 不用 `-m immediate`：那相当于拔电源，下次启动要做崩溃恢复。
  * 也不用 `-m smart`：那会等所有客户端自己断开，开发时常常等不到。
+ *
+ * ## 为什么停完还要从端口反查一次
+ *
+ * `pg_ctl status` 只认 pid 文件。实例崩溃恢复中途被打断时，postmaster 已死、
+ * pid 文件却还指着它，而它 fork 出的后台 worker 活着并占着监听端口 ——
+ * 这时 pg_ctl 会说「未在运行」，端口却仍被一个查不出来的孤儿占着，下一次
+ * `db:start` 就会把「端口能连」误判成「已启动」。
+ *
+ * 所以停完（或判定「未在运行」）之后都要清一次：孤儿进程 + 陈旧 pid 文件。
+ * 正常停止时这两步都是空操作。
  */
 
-import { execFile } from 'node:child_process'
-import { access, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
-import { fileURLToPath } from 'node:url'
-import { promisify } from 'node:util'
 
-const exec = promisify(execFile)
-
-const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
-const PG_HOME = path.join(ROOT, '.me', 'pg')
-const DATA_DIR = path.join(PG_HOME, 'pgdata')
-
-const isWindows = process.platform === 'win32'
-const exe = (name) => (isWindows ? `${name}.exe` : name)
+import {
+  DATA_DIR,
+  clearPortHolders,
+  exists,
+  findBinDir,
+  pgCtlStatus,
+  pgCtlStop,
+  readPidFile,
+  readPort,
+  removeStalePidFile,
+} from './lib/pg-runtime.mjs'
 
 function log(message) {
   console.log(`[db:stop] ${message}`)
-}
-
-async function exists(target) {
-  try {
-    await access(target)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function findBinDir() {
-  const scopeDir = path.join(PG_HOME, 'node_modules', '@embedded-postgres')
-  let entries
-  try {
-    entries = await readdir(scopeDir)
-  } catch {
-    return null
-  }
-  for (const name of entries) {
-    const bin = path.join(scopeDir, name, 'native', 'bin')
-    if (await exists(path.join(bin, exe('pg_ctl')))) return bin
-  }
-  return null
 }
 
 async function main() {
@@ -66,27 +51,45 @@ async function main() {
     return
   }
 
-  const ctl = (args) =>
-    exec(path.join(binDir, exe('pg_ctl')), args, { cwd: ROOT, maxBuffer: 8 * 1024 * 1024 })
+  const port = await readPort()
+  // 先记下「这次停止之前有没有本实例的痕迹」，用来决定收尾时该不该报警。
+  const hadPidFile = (await readPidFile()) !== null
+  const wasRunning = await pgCtlStatus(binDir)
+  let stoppedProperly = false
 
-  try {
-    await ctl(['-D', DATA_DIR, 'status'])
-  } catch {
-    log('未在运行')
+  if (wasRunning) {
+    try {
+      await pgCtlStop(binDir)
+      stoppedProperly = true
+    } catch (error) {
+      console.error(
+        `[db:stop] 正常停止失败：${error?.stderr?.trim() || error?.message || '未知错误'}`,
+      )
+      console.error('  继续清理残留进程。')
+    }
+  }
+
+  const { killed, skipped } = await clearPortHolders(port)
+  if (killed.length > 0) log(`已结束占用端口的 postgres 进程：${killed.join(', ')}`)
+
+  const removedPidFile = await removeStalePidFile()
+  if (removedPidFile) log('已删除陈旧的 postmaster.pid')
+
+  if (skipped.length > 0 && (hadPidFile || wasRunning)) {
+    console.error(
+      `[db:stop] 端口 ${port} 仍被其它进程占用（PID ${skipped
+        .map((item) => item.pid)
+        .join(', ')}），未做处理。`,
+    )
+    process.exitCode = 1
+  }
+
+  if (stoppedProperly || killed.length > 0 || removedPidFile) {
+    log('已停止')
     return
   }
 
-  try {
-    await ctl(['-D', DATA_DIR, '-m', 'fast', '-w', '-t', '60', 'stop'])
-  } catch (error) {
-    console.error(
-      `[db:stop] 停止失败：${error?.stderr?.trim() || error?.message || '未知错误'}`,
-    )
-    console.error('  若进程已卡死，可在任务管理器结束 postgres.exe 后重试。')
-    process.exit(1)
-  }
-
-  log('已停止')
+  log('未在运行')
 }
 
 await main()
