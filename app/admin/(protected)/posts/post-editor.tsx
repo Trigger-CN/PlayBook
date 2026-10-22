@@ -17,18 +17,26 @@ import { EMPTY_POST_FORM_STATE, type PostFormState } from './form-state'
  * 纯文本域天然满足这条，还保住浏览器自带的撤销、拼写检查、输入法与
  * 粘贴行为 —— 自制富文本最容易在这些地方出问题。
  *
- * ## 为什么用 useActionState 而不是 redirect 报错
+ * ## 为什么失败时必须原地返回状态（而不是 redirect）
  *
  * 校验失败时 redirect 会让整页重渲染，刚写的正文全丢。设计 15 §8 的
- * 验收标准是「保存/发布失败不丢失正文」，因此失败必须原地返回状态。
+ * 验收标准是「保存/发布失败不丢失正文」。
  *
- * ## 刻意没做的（设计里有）
+ * ## 为什么所有字段都是受控的 —— 这一条曾经是错的
  *
- * - 自动保存（§3.2）：需要草稿版本表与限频 Server Action，单独一块工作。
- *   当前用「离开页面前提示」作为替代，避免误关丢稿。
- * - 实时预览（§3.3）：MDX 只在服务端编译，预览需要额外的受保护路由。
- * - 富文本工具栏（§2.1 第 3 条）：会诱使作者以为具备富文本能力，而实际
- *   只有纯文本域 —— 一个点不动的工具栏比没有更差。
+ * 早先的实现里字段写的是 `defaultValue`（非受控），并认为「用
+ * useActionState 原地返回状态就能保住输入」。**这个判断不成立**：
+ * React 19 在 `<form action={fn}>` 提交完成后会**自动重置表单**（等价于
+ * 调用 `form.reset()`），非受控字段会被重置回 `defaultValue`。
+ * 结果是：填好正文、slug 打错、点保存 → 服务端返回校验错误 →
+ * 页面跳一下、**正文清空**。
+ *
+ * 受控 + `value` 则不受 `form.reset()` 影响（React 在重置后会重新把
+ * state 的值写回 DOM），这是 React 官方对 action 表单的已知行为。
+ * 代价是每个字段要多一个 state，但换来的是「失败不丢稿」这条硬要求。
+ *
+ * 另外：**不要在服务端返回时用 `initial` 覆盖 state**。`initial` 是页面
+ * 首次渲染的库内值，用户正在编辑的是 state；两者只能初始化时对齐一次。
  */
 
 const inputStyle = { borderColor: 'var(--line)', background: 'var(--surface)' } as const
@@ -85,6 +93,18 @@ export function PostEditor({
     EMPTY_POST_FORM_STATE,
   )
 
+  // 全部字段受控：失败时 DOM 不会被表单重置清空。
+  const [slug, setSlug] = useState(initial.slug)
+  const [title, setTitle] = useState(initial.title)
+  const [summary, setSummary] = useState(initial.summary)
+  const [body, setBody] = useState(initial.body)
+  const [publishedAt, setPublishedAt] = useState(initial.publishedAt)
+  const [category, setCategory] = useState(initial.category)
+  const [tags, setTags] = useState(initial.tags)
+  const [cover, setCover] = useState(initial.cover)
+  const [coverAlt, setCoverAlt] = useState(initial.coverAlt)
+  const [featured, setFeatured] = useState(initial.featured)
+
   const [dirty, setDirty] = useState(false)
 
   // 有未保存修改时提醒一次。用 beforeunload 而不是拦截站内路由跳转：
@@ -112,11 +132,8 @@ export function PostEditor({
       className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start"
     >
       {/*
-        slug 的处理是新建与编辑的分水岭：
-          - 新建：必须可编辑，且要有 name="slug" 才会被提交。
-          - 编辑：不可改（改 slug 需要重定向规划），用 hidden 提交原值。
-        曾经把两者都写成 hidden，导致新建的文章 slug 永远为空 —— 一个
-        必然失败的入口比没有入口更糟。
+        slug 在编辑态不可改（改 slug 需要重定向规划），用 hidden 提交原值；
+        新建态必须是可见可编辑的输入框，否则新建永远失败。
       */}
       {isNew ? null : <input type="hidden" name="slug" value={initial.slug} />}
       <input type="hidden" name="expectedVersion" value={initial.expectedVersion} />
@@ -168,7 +185,8 @@ export function PostEditor({
             id="post-title"
             name="title"
             type="text"
-            defaultValue={initial.title}
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
             maxLength={200}
             required
             className="rounded-xl border px-3 py-2 text-sm"
@@ -179,15 +197,15 @@ export function PostEditor({
         <Field
           label="摘要"
           htmlFor="post-summary"
-          hint="会出现在列表、搜索结果与分享卡片里，不自动从正文截取。"
+          hint="会出现在列表、搜索结果与分享卡片里，不自动从正文截取。草稿可留空。"
         >
           <textarea
             id="post-summary"
             name="summary"
-            defaultValue={initial.summary}
+            value={summary}
+            onChange={(event) => setSummary(event.target.value)}
             rows={2}
             maxLength={500}
-            required
             className="rounded-xl border px-3 py-2 text-sm leading-relaxed"
             style={fieldStyle('summary')}
           />
@@ -201,7 +219,8 @@ export function PostEditor({
           <textarea
             id="post-body"
             name="body"
-            defaultValue={initial.body}
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
             rows={22}
             className="rounded-xl border px-3 py-2 font-mono text-[13px] leading-relaxed"
             style={fieldStyle('body')}
@@ -238,7 +257,8 @@ export function PostEditor({
                 id="post-slug"
                 name="slug"
                 type="text"
-                defaultValue={initial.slug}
+                value={slug}
+                onChange={(event) => setSlug(event.target.value)}
                 maxLength={120}
                 required
                 placeholder="hello-world"
@@ -256,13 +276,13 @@ export function PostEditor({
             </div>
           )}
 
-          <Field label="发布日期" htmlFor="post-published-at" hint="格式 YYYY-MM-DD">
+          <Field label="发布日期" htmlFor="post-published-at" hint="格式 YYYY-MM-DD，草稿可留空">
             <input
               id="post-published-at"
               name="publishedAt"
               type="date"
-              defaultValue={initial.publishedAt}
-              required
+              value={publishedAt}
+              onChange={(event) => setPublishedAt(event.target.value)}
               className="rounded-xl border px-3 py-2 text-sm"
               style={fieldStyle('publishedAt')}
             />
@@ -272,7 +292,8 @@ export function PostEditor({
             <input
               type="checkbox"
               name="featured"
-              defaultChecked={initial.featured}
+              checked={featured}
+              onChange={(event) => setFeatured(event.target.checked)}
               className="h-4 w-4"
             />
             精选
@@ -303,7 +324,8 @@ export function PostEditor({
               id="post-category"
               name="category"
               type="text"
-              defaultValue={initial.category}
+              value={category}
+              onChange={(event) => setCategory(event.target.value)}
               className="rounded-xl border px-3 py-2 text-sm"
               style={inputStyle}
             />
@@ -313,7 +335,8 @@ export function PostEditor({
             <textarea
               id="post-tags"
               name="tags"
-              defaultValue={initial.tags}
+              value={tags}
+              onChange={(event) => setTags(event.target.value)}
               rows={3}
               className="rounded-xl border px-3 py-2 text-sm"
               style={inputStyle}
@@ -332,7 +355,8 @@ export function PostEditor({
               id="post-cover"
               name="cover"
               type="text"
-              defaultValue={initial.cover}
+              value={cover}
+              onChange={(event) => setCover(event.target.value)}
               placeholder="/images/..."
               className="rounded-xl border px-3 py-2 text-sm"
               style={inputStyle}
@@ -348,7 +372,8 @@ export function PostEditor({
               id="post-cover-alt"
               name="coverAlt"
               type="text"
-              defaultValue={initial.coverAlt}
+              value={coverAlt}
+              onChange={(event) => setCoverAlt(event.target.value)}
               className="rounded-xl border px-3 py-2 text-sm"
               style={fieldStyle('coverAlt')}
             />

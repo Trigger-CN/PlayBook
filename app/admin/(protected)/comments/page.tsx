@@ -67,7 +67,12 @@ export default async function AdminCommentsPage({ searchParams }: Props) {
   const err = errorMessage(error)
 
   // 操作完成后回到当前筛选（设计 12 §3）。
-  const currentListPath = status === 'all' ? '/admin/comments?status=all' : `/admin/comments?status=${status}`
+  //
+  // 这里只给基础路径，不带 ok/error —— 那两个参数由 Action 用
+  // `includes('?') ? '&' : '?'` 自行追加。若页面再把它们拼进来，
+  // 会得到重复或错位的查询串。
+  const currentListPath =
+    status === 'all' ? '/admin/comments?status=all' : `/admin/comments?status=${status}`
 
   return (
     <div>
