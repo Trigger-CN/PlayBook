@@ -183,12 +183,34 @@ export async function findPortListeners(port) {
   }
 }
 
-/** 查一个 PID 的名字与父进程。查不到返回 null。 */
+/**
+ * 把 ps / CIM 的原始字段规整成统一结构，并识别身份。
+ *
+ * postgres 只有两种命令行形态：
+ *   postmaster  「…/postgres.exe」 -D "…/pgdata"
+ *   子进程      「…/postgres.exe」 --forkchild="io_worker" 1764
+ *
+ * 身份必须先认出来：只凭「父进程是否已死」区分不出孤儿与正常 postmaster ——
+ * pg_ctl 是 detach 启动的，它退出后 postmaster 的父进程本来就不在了。
+ */
+function toDescriptor(pid, parentId, name, commandLine) {
+  const text = String(commandLine ?? '').trim()
+  const parent = Number.parseInt(parentId, 10)
+  return {
+    pid: Number.parseInt(pid, 10),
+    ppid: Number.isInteger(parent) && parent > 0 ? parent : null,
+    name: String(name ?? '').trim(),
+    commandLine: text,
+    kind: /--forkchild=/i.test(text) ? 'child' : /(^|\s)-D(\s|$)/.test(text) ? 'postmaster' : 'unknown',
+  }
+}
+
+/** 查一个进程的名字、父进程、命令行与身份。查不到返回 null。 */
 export async function describeProcess(pid) {
   if (isWindows) {
     const script =
       `Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" ` +
-      '| Select-Object ProcessId,ParentProcessId,Name | ConvertTo-Json -Compress'
+      '| Select-Object ProcessId,ParentProcessId,Name,CommandLine | ConvertTo-Json -Compress'
     try {
       const { stdout } = await exec(
         'powershell.exe',
@@ -197,27 +219,21 @@ export async function describeProcess(pid) {
       )
       const parsed = JSON.parse(stdout.trim() || 'null')
       if (!parsed) return null
-      return {
-        pid,
-        ppid: Number.parseInt(parsed.ParentProcessId, 10) || null,
-        name: String(parsed.Name ?? '').trim(),
-      }
+      return toDescriptor(parsed.ProcessId ?? pid, parsed.ParentProcessId, parsed.Name, parsed.CommandLine)
     } catch {
       return null
     }
   }
 
   try {
-    const { stdout } = await exec('ps', ['-p', String(pid), '-o', 'ppid=,comm='], {
+    const { stdout } = await exec('ps', ['-p', String(pid), '-o', 'ppid=,command='], {
       maxBuffer: 1024 * 1024,
     })
-    const [ppidText, ...nameParts] = stdout.trim().split(/\s+/)
-    if (!ppidText) return null
-    return {
-      pid,
-      ppid: Number.parseInt(ppidText, 10) || null,
-      name: nameParts.join(' ').trim(),
-    }
+    const line = stdout.trim()
+    if (!line) return null
+    const parts = line.split(/\s+/)
+    const commandLine = parts.slice(1).join(' ')
+    return toDescriptor(pid, parts[0], path.basename(parts[1] ?? ''), commandLine)
   } catch {
     return null
   }
@@ -227,10 +243,58 @@ function isPostgresProcess(descriptor) {
   return /^postgres(\.exe)?$/i.test(descriptor?.name ?? '')
 }
 
+/** 命令行是否指向本仓库装的这套二进制。用来避免误伤另一个 PostgreSQL 安装。 */
+function isOwnedByThisInstall(descriptor) {
+  const normalize = (value) => value.replace(/\\/g, '/').toLowerCase()
+  if (!descriptor?.commandLine) return false
+  return normalize(descriptor.commandLine).includes(normalize(PG_HOME))
+}
+
+/** 列出机器上所有 postgres 进程及其身份。 */
+export async function listPostgresProcesses() {
+  if (isWindows) {
+    const script =
+      "Get-CimInstance Win32_Process -Filter \"Name='postgres.exe'\" " +
+      '| Select-Object ProcessId,ParentProcessId,Name,CommandLine | ConvertTo-Json -Compress'
+    try {
+      const { stdout } = await exec(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command', script],
+        { windowsHide: true, maxBuffer: 2 * 1024 * 1024 },
+      )
+      const text = stdout.trim()
+      if (!text) return []
+      const parsed = JSON.parse(text)
+      const rows = Array.isArray(parsed) ? parsed : [parsed]
+      return rows.map((row) =>
+        toDescriptor(row.ProcessId, row.ParentProcessId, row.Name, row.CommandLine),
+      )
+    } catch {
+      return []
+    }
+  }
+
+  try {
+    const { stdout } = await exec('ps', ['-eo', 'pid=,ppid=,args='], { maxBuffer: 4 * 1024 * 1024 })
+    return stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((line) => {
+        const parts = line.split(/\s+/)
+        const commandLine = parts.slice(2).join(' ')
+        return toDescriptor(parts[0], parts[1], path.basename(parts[2] ?? ''), commandLine)
+      })
+      .filter((descriptor) => isPostgresProcess(descriptor))
+  } catch {
+    return []
+  }
+}
+
 /**
  * 强杀一个进程，并等到它真的消失。
  *
- * 只用在孤儿身上：正常停止走 pg_ctl -m fast 才能保证数据一致；而孤儿的
+ * 只用在残留进程身上：正常停止走 pg_ctl -m fast 才能保证数据一致；而孤儿的
  * 父 postmaster 已经没了，它本身不再参与任何一致性保证。
  */
 export async function terminateProcess(pid) {
@@ -248,22 +312,39 @@ export async function terminateProcess(pid) {
 }
 
 /**
- * 清掉占着端口的 postgres 进程。
+ * 清掉占着端口的残留 postgres 进程。
  *
- * 只在两种情况下动手，避免误伤别的实例：
- *   - 它就是 postmaster.pid 记录的那个进程（本实例的 postmaster，只是已经不能服务查询）
- *   - 它的父进程已经不在了（孤儿：父 postmaster 崩溃后活下来的 worker）
+ * ## 为什么不能只看「谁在监听端口」
  *
- * 其它 postgres 进程只报告、不杀：端口被别的实例占着是配置问题，
- * 替用户杀掉别人的数据库不是这个脚本该做的决定。
+ * Windows 把监听 socket 记在**创建它的那个进程**上。postmaster 死掉、子进程
+ * 继承 socket 之后，`Get-NetTCPConnection` 报出来的 OwningProcess 仍然是那个
+ * **已经不存在**的 PID —— 真正占着端口的 worker 根本不出现在列表里。
+ *
+ * 只按端口反查就会看到一个查不到的 PID，进而误判成「外部进程」而拒绝清理，
+ * 于是 `db:start` 明明能修却报错退出。这个坑是实测踩到的，不是推测。
+ *
+ * ## 两轮扫描
+ *
+ *   1. 端口归属者里**还查得到**的进程：只有「就是 pid 文件记录的 postmaster」
+ *      或「本仓库二进制的子进程」才动手，其余一律只报告不杀。
+ *   2. 全机 postgres 进程里，命令行属于本仓库这套二进制、身份是子进程、
+ *      且父进程已经不在的那些 —— 这些才是继承了 socket 的孤儿。
+ *
+ * postmaster 不在这里处理：它还活着时该走 `pg_ctl -m fast`，那才保证数据一致。
+ * 命令行不属于本仓库的 postgres 一律只报告不杀 —— 替用户结束别人的数据库
+ * 不是这个脚本该做的决定。
  */
 export async function clearPortHolders(port) {
   const pidInfo = await readPidFile()
   const killed = []
   const skipped = []
 
+  // 第一轮：操作系统认定的监听者
   for (const pid of await findPortListeners(port)) {
     const descriptor = await describeProcess(pid)
+
+    // 查不到 = 进程已经不在了。端口可能仍被它遗留的 worker 占着，交给第二轮。
+    if (!descriptor) continue
 
     if (!isPostgresProcess(descriptor)) {
       skipped.push({ pid, reason: 'not-postgres' })
@@ -271,15 +352,26 @@ export async function clearPortHolders(port) {
     }
 
     const isRecordedPostmaster = pidInfo?.pid === pid
-    const isOrphan = descriptor.ppid ? !isPidAlive(descriptor.ppid) : false
+    const isOwnChild = isOwnedByThisInstall(descriptor) && descriptor.kind === 'child'
 
-    if (!isRecordedPostmaster && !isOrphan) {
+    if (!isRecordedPostmaster && !isOwnChild) {
       skipped.push({ pid, reason: 'owned-by-other-instance' })
       continue
     }
 
     if (await terminateProcess(pid)) killed.push(pid)
     else skipped.push({ pid, reason: 'terminate-failed' })
+  }
+
+  // 第二轮：继承了监听 socket、但不会出现在端口列表里的孤儿子进程
+  for (const descriptor of await listPostgresProcesses()) {
+    if (descriptor.kind !== 'child') continue
+    if (!isOwnedByThisInstall(descriptor)) continue
+    if (killed.includes(descriptor.pid)) continue
+    if (!descriptor.ppid || isPidAlive(descriptor.ppid)) continue
+
+    if (await terminateProcess(descriptor.pid)) killed.push(descriptor.pid)
+    else skipped.push({ pid: descriptor.pid, reason: 'terminate-failed' })
   }
 
   return { killed, skipped }

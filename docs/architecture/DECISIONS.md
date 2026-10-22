@@ -771,6 +771,52 @@ postmaster（PID 26640）在恢复完成前就死了，但它 fork 出的一个�
 | 端口被非 postgres 进程占用 | exit **1**，`端口 5432 上仍有未能清理的进程（PID 21624）`；该进程**未被杀**（仍存活），也未启动 postgres（`pg=0`） |
 | 僵尸态（端口监听、查询挂死） | `db:health` → `timeout expired`；`db:start` → `检测到异常状态：端口 5432 有监听，但查询没有响应` → `已结束占用端口的 postgres 进程：24804` → `已删除陈旧的 postmaster.pid` → 启动成功；`db:health` 通 |
 
+### 第一版加固漏掉的一个真实缺陷
+
+第一版 `clearPortHolders` 只做一件事：拿端口归属者的 PID 去查进程，查到 postgres 且「是 pid 文件记录的 postmaster」或「父进程已死」就杀，否则报告 `owned-by-other-instance` 并让 `db:start` 失败退出。
+
+实测撞上了它修不了的形态。当时的状态是：
+
+```
+pg=1
+5432=True
+ProcessId=53548  ParentProcessId=44024  cmd=... postgres.exe --forkchild="io_worker" 1764
+pidfile_exists=False
+Get-NetTCPConnection -LocalPort 5432 → OwningProcess=44024
+```
+
+也就是：`44024`（postmaster）已经死了，`53548`（它的 io_worker）还活着，端口仍然可连，`db:health` 报 `timeout expired`。而 `db:start` 打印的是：
+
+```
+[db:start] 检测到异常状态：端口 5432 有监听，但查询没有响应
+[db:start] 端口 5432 上仍有未能清理的进程（PID 44024）。
+  请先释放该端口，或换端口重跑 db:setup。
+```
+
+**根因**：Windows 把监听 socket 记在**创建它的那个进程**上。postmaster 死后子进程继承了 socket，但操作系统报出来的 `OwningProcess` 仍然是那个**已经不存在的** PID。于是 `describeProcess(44024)` 返回 `null`，代码把它当成「查不到的外部进程」→ `skipped` → `fail()`。真正占着端口的 `53548` **根本不出现在端口列表里**，无论怎么扫都扫不到。
+
+这个缺陷的要害不是「杀错了」，而是「该杀的看不见」：只从端口反查，在继承了 socket 的场景下信息本身就是错的。
+
+**修法（两轮扫描）**：
+
+1. 端口归属者里**还查得到**的进程：只有「就是 pid 文件记录的 postmaster」或「本仓库二进制的子进程」才动手；`describeProcess` 返回 `null` 时不再当作外部进程，直接跳过交给第二轮。
+2. 扫描**全机** postgres 进程，挑出同时满足三条的：命令行属于本仓库这套二进制（比较归一化后的 `PG_HOME` 前缀，避免误伤另一个 PostgreSQL 安装）、身份是子进程（命令行含 `--forkchild=`）、父进程已经不在。这些才是继承了 socket 的孤儿。
+
+身份必须从命令行认，不能只看「父进程是否已死」：`pg_ctl` 是 detach 启动的，它退出后**正常 postmaster 的父进程本来就不在了**，只看父进程会把健康实例误判成孤儿。`toDescriptor` 因此用 `/--forkchild=/` 区分 `child`，用 `/(^|\s)-D(\s|$)/` 区分 `postmaster`，其余为 `unknown`。
+
+postmaster 仍然不在这条路径上处理：它还活着时该走 `pg_ctl -m fast`，那才保证数据一致。命令行不属于本仓库的 postgres 一律只报告不杀。
+
+**修复后实测**（同一个卡死状态，未做任何手工清理）：
+
+```
+[db:start] 检测到异常状态：端口 5432 有监听，但查询没有响应
+[db:start] 已结束占用端口的 postgres 进程：53548
+[db:start] 启动中…
+[db:start] 已启动：postgres://postgres:***@127.0.0.1:5432/playbook
+EXIT_START=0   pg_after=9   新监听者 59464
+```
+
+随后 `start-dev.bat` 全流程：`[2/3] Restarting the local database...` → 无 `[WARN]` 分支 → dev server `Ready in 4.7s` → 首页 `HTTP=200`、`len=81575`、无「查询失败」；`db:health` 连接成功 211 ms。
 僵尸态是**故意构造**的：用 `NtSuspendProcess` 挂起 postmaster，让它继续占着监听 socket 但不再回应任何请求。这样复现出来的症状与真实事故一致（`pg=9`、端口在监听、`db:health` 报 `timeout expired`），但不必真的打断一次崩溃恢复。
 
 ### 未验证范围
@@ -778,3 +824,5 @@ postmaster（PID 26640）在恢复完成前就死了，但它 fork 出的一个�
 - 孤儿清理的 POSIX 分支（`lsof` + `ps`）**未在 macOS / Linux 上实测**，只在 Windows 上跑过。
 - 「端口被非 postgres 程序占用」的告警分支只验证了代码路径，未构造真实的端口冲突。
 - 加固只覆盖「进程层面」的异常。数据目录在磁盘满 / 异常断电后的恢复能力仍未验证——本轮事故正属此类，脚本只能清理，不能保证数据完整性。
+- 第二轮扫描依赖「父进程已死」判定孤儿。如果某个 worker 的 PID 被操作系统回收并分配给一个存活的无关进程，该 worker 会被判成「不是孤儿」而漏掉；这是 PID 复用的固有局限，未构造该场景验证。
+- `start-dev.bat` 的数据库步骤只在 Windows 上实测过（cmd + chcp 65001）；批处理本身不跨平台，其他平台应直接用 `npm run db:start`。

@@ -18,16 +18,34 @@ if not defined NODE_MAJOR goto :bad_node
 if %NODE_MAJOR% LSS 20 goto :old_node
 
 if exist "node_modules\" goto :deps_ready
-echo [1/2] node_modules not found - running npm install, this can take a few minutes.
+echo [1/3] node_modules not found - running npm install, this can take a few minutes.
 call npm install
 if errorlevel 1 goto :install_failed
 goto :deps_done
 
 :deps_ready
-echo [1/2] Dependencies are ready.
+echo [1/3] Dependencies are ready.
 
 :deps_done
-echo [2/2] Starting the dev server - default port 3000
+if not exist ".me\pg\pgdata\PG_VERSION" goto :db_absent
+echo [2/3] Restarting the local database...
+call npm run db:stop >nul 2>nul
+call npm run db:start
+if errorlevel 1 goto :db_failed
+goto :db_done
+
+:db_absent
+echo [2/3] Local database is not set up - skipping the restart.
+echo       Run "npm run db:setup" once to enable likes, comments and admin.
+goto :db_done
+
+:db_failed
+echo [WARN] The local database did not come up.
+echo        The site still starts, but interactions and admin stay disabled.
+echo        Check the messages above, or run "npm run db:health" for details.
+
+:db_done
+echo [3/3] Starting the dev server - default port 3000
 echo       Press Ctrl+C to stop.
 echo.
 
