@@ -153,12 +153,22 @@ async function main() {
     for (const post of posts) {
       const { rows } = await client.query(
         `select id, body, version, title, summary, tags, category, featured,
-                cover_url, cover_alt, status, published_at,
+                cover_url, cover_alt, status, published_at, source,
                 to_char(updated_at, 'YYYY-MM-DD') as updated_at_text
            from public.posts where slug = $1`,
         [post.slug],
       )
       const existing = rows[0]
+
+      // 后台在线编辑过的文章（source = 'admin'）跳过：数据库是它的权威来源。
+      // 不做这个判断的话，跑一次导入就会用 MDX 文件静默覆盖网页上写的正文 ——
+      // 而且从输出里看不出发生过什么。要拿回文件版本，先在后台把该文删除或
+      // 手工把 source 改回 'db'，让作者显式选择权威来源。
+      if (existing?.source === 'admin') {
+        skipped += 1
+        console.log(`[import] 跳过 ${post.slug}（正文来自后台在线编辑，不用文件覆盖）`)
+        continue
+      }
 
       if (!existing) {
         await client.query(

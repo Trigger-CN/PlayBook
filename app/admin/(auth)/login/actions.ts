@@ -104,7 +104,14 @@ export async function logout(): Promise<void> {
 
 /**
  * 兑换登录令牌并建立会话。
- * 由 /admin/login/verify 页面调用（该页面是 Server Component，见 page.tsx）。
+ *
+ * 由 `/admin/login/verify/route.ts`（Route Handler）调用 —— 必须是
+ * Route Handler 或 Server Action，因为要写会话 cookie。返回值是应跳转的
+ * 同源后台路径（失败时带 `?error=`）。
+ *
+ * 注意：consumeLoginToken 已经把令牌消耗掉；如果写 cookie 这一步失败，
+ * 令牌就白花了 —— 人得重新请求一封登录邮件。这是有意的取舍：把一次性
+ * 语义交给数据库单语句完成，换取并发下不会双花。
  */
 export async function completeLogin(token: string, next: string | null): Promise<string> {
   if (!hasDatabaseUrl()) return '/admin/login?error=unavailable'

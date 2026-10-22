@@ -826,3 +826,122 @@ EXIT_START=0   pg_after=9   新监听者 59464
 - 加固只覆盖「进程层面」的异常。数据目录在磁盘满 / 异常断电后的恢复能力仍未验证——本轮事故正属此类，脚本只能清理，不能保证数据完整性。
 - 第二轮扫描依赖「父进程已死」判定孤儿。如果某个 worker 的 PID 被操作系统回收并分配给一个存活的无关进程，该 worker 会被判成「不是孤儿」而漏掉；这是 PID 复用的固有局限，未构造该场景验证。
 - `start-dev.bat` 的数据库步骤只在 Windows 上实测过（cmd + chcp 65001）；批处理本身不跨平台，其他平台应直接用 `npm run db:start`。
+
+---
+
+## D-17 后台文章在线书写：路由组、三态正文来源与缓存失效
+
+> 本节记录「实现后台登录/文章书写/评论审核」这一轮（第 18 轮）的决策，以及实施中发现并修掉的四个真实缺陷。前三个缺陷都不是新写的代码引入的，而是既有实现里长期存在、因为验证方式绕开了它们而从未暴露。
+
+### 1. 为什么要用路由组把登录页移出守卫
+
+原实现把 `requireAdmin()` 放在 `app/admin/layout.tsx`——也就是**所有** `/admin/*` 路由的布局。而 `/admin/login` 与 `/admin/login/verify` 正在这个布局之下，于是未登录访问登录页会得到：
+
+```
+GET /admin/login  →  307 /admin/login?next=/admin  →  307 …（无限循环）
+```
+
+**后台根本登不进去。** 而 `logout()` 也是 redirect 到 `/admin/login`，同样死循环。
+
+这个缺陷长期没有暴露，原因值得记下来：早先的后台验证都是按 `sha256(salt + 'admin-session:' + token)` 直接往 `admin_sessions` 写一行、带 cookie 去请求，**从来没有真正走过登录页**；`e2e.mjs` 只断言 `/admin` 返回 307 且带 `next` 参数（用 `redirect: 'manual'`，从不跟随）。两边都绕过了那条死循环。`middleware.ts` 里已经为登录路径开了白名单并留了注释「否则登录页自己会被重定向成死循环」——说明想到了 middleware 那层，**漏了 layout 那层**。
+
+**决策：用 Next.js 路由组把「需要会话的」与「登录用的」在物理上分开，URL 完全不变。**
+
+| 路径 | 内容 | 是否有守卫 |
+| --- | --- | --- |
+| `app/admin/layout.tsx` | 只放 `metadata`（noindex）+ `force-dynamic` | 无 |
+| `app/admin/(protected)/layout.tsx` | `hasDatabaseUrl` / `isAdminConfigured` / `requireAdmin` 三分支 + 后台外壳 | 有 |
+| `app/admin/(auth)/login/` | 登录页、登录表单、登录 Action、令牌兑换 | 无 |
+
+比「在 layout 里维护一份路径白名单」更好：白名单是字符串判断，新加一个公开后台路由就会悄悄落到守卫后面；路由组是结构性的，放错目录立刻看得出来。
+
+### 2. 令牌兑换必须是 Route Handler，不能是页面
+
+修掉死循环后，`GET /admin/login/verify?token=…` 变成 **500**：
+
+```
+Error: Cookies can only be modified in a Server Action or Route Handler.
+```
+
+`verify/page.tsx` 是 Server Component，渲染时调用 `completeLogin()` → `setAdminSessionCookie()` → `cookies().set()`。Next.js 禁止在渲染中改 cookie，所以登录**最后一步必然失败**；而令牌此时已被 `consumeLoginToken` 用条件更新消耗掉——**人拿不到会话，令牌也白花了**，只能重新请求一封登录邮件。
+
+**决策：把 `/admin/login/verify` 改成 Route Handler（`route.ts`），URL 不变。**
+
+用 GET 不违反「退出登录不用可预取的 GET」那条约定。那条的理由是「被预取就等于被执行」；而这里令牌本来就在 URL 里，点开就是它的唯一用途，且一次性、15 分钟过期，重复访问只会得到「无效」而不是第二次登录。
+
+### 3. `posts.source` 三态：谁最后写正文，谁就是权威来源
+
+`source` 从 `('file','db')` 扩为 `('file','db','admin')`：
+
+| 值 | 语义 |
+| --- | --- |
+| `file` | 从未导入（保留给「只在库里建骨架」） |
+| `db` | 由 `db:import` 从 MDX 同步，**文件是权威来源** |
+| `admin` | 后台在线编辑过，**数据库是权威来源，`db:import` 必须跳过** |
+
+改动前 `db:import` 的 update 分支无条件写 `source='db'` 并覆盖 `body`：**任何在网页上编辑过的文章，都会被下一次导入静默覆盖**，而且从输出里看不出发生过什么。编辑器一上线就会是个数据丢失陷阱。
+
+判定方向只有一条：**谁最后写入了正文，谁就是权威来源。** 这样「改了文件但页面没变」与「网页上写的被导入冲掉」两种静默不一致都不会发生。要拿回文件版本，必须在后台把该文删掉或手工把 `source` 改回 `'db'`，让作者**显式选择**。
+
+### 4. `revalidateTag` 在本项目是空操作
+
+**这是本轮最隐蔽的缺陷，也是全项目范围的既有问题。**
+
+现象：在后台把一篇文章归档，`/posts` 列表立刻不显示它（该页是 Dynamic），但 `/posts/<slug>` **仍然 200**、首页仍然列着它、RSS 里还在。响应头：`x-nextjs-cache: HIT`、`x-nextjs-prerender: 1, 1`、`stale-time=300`、`cache-control: s-maxage=31536000`。
+
+根因：`revalidateTag(tag)` 只能失效**带该 tag 的缓存条目**——即 `fetch(url, { next: { tags } })` 或 `unstable_cache(fn, keys, { tags })` 建立的条目。本项目公开页**全部经 `getDataPorts()` 直连 `pg` 查询**，既不是 fetch 也不是 `unstable_cache`（`grep unstable_cache` 在 `lib/data/adapters/postgres.ts` 里 0 命中），全项目此前**从未使用过 `revalidatePath`**。所以所有 `revalidateTag` 调用都是空操作：不报错，静态页继续拿构建期的旧 HTML，直到进程重启。
+
+「一半生效」是最难发现的一类问题：Dynamic 的列表页立刻更新，Static/SSG 的详情页、首页、RSS、sitemap 不更新，看起来像「有时候好用」。
+
+**决策：双写。** 在 `lib/cache/tags.ts` 里与 tag 并列维护路径清单——`revalidatePostPaths(slug)` 与 `revalidateTimelinePaths(id)`——并在每个内容变更 Action 里同时调用 `revalidateTag` 与 `revalidatePath`（含 `/stats`）。保留 `revalidateTag` 是为了将来真改用 `fetch`/`unstable_cache` 缓存时不用再改一遍；两者必须一起改，所以放在同一个模块里。
+
+> 顺带说明为什么不用「把数据库查询包进 `unstable_cache` 并打 tag」这条更「标准」的路：那会让每次页面渲染都要维护一层缓存键，而当前数据量下一层缓存反而是多余的复杂度。按路径失效的语义更直接：**改了哪篇，就失效哪篇的路由**。
+
+### 5. 草稿允许半成品
+
+`validate()` 原先对草稿也强制 `summary` 非空、`publishedAt` 匹配 `YYYY-MM-DD`、`body` 非空——一篇只有标题的草稿存不下来。设计 15 §3.4 约束的是**发布**，不是保存。
+
+**决策：** `slug` 永远校验（它终将成为 URL，且 `posts_slug_check` 反正会拒绝非法值）；「填了发布日期就必须合法」也无条件校验；其余（`summary` 必填、`publishedAt` 必填、`body` 非空、`cover`→`coverAlt`、MDX 编译）**全部收进 `status === 'published'` 分支**。
+
+### 6. 编辑器为什么是原生表单
+
+| 决策 | 理由 |
+| --- | --- |
+| 原生 `<textarea>` + 原生表单，不做富文本工具栏 | 设计 15 §7 要求「文本区始终可用」；纯文本域天然满足，还保住浏览器自带的撤销、拼写检查、输入法与粘贴。一个点不动的工具栏比没有更差。 |
+| 校验失败用 `useActionState` 返回状态，**不 redirect** | `redirect` 会整页重渲染，**刚写的正文全丢**。设计 15 §8 明确要求「保存/发布失败不丢失正文」。 |
+| `changePostStatusAction` **可以** redirect | 那里没有正文输入会因此丢失。 |
+| 只返回第一条校验错误 | 一次列十条在移动端会把表单挤出屏幕；修完第一条再看第二条更顺。 |
+| 只有 `status === 'published'` 才编译 MDX | 草稿本来就该允许半成品。 |
+| 每次写入都带 `version` 乐观锁 | 两个编辑页同时打开时，后保存的不该静默覆盖先保存的。 |
+| `published_at` 直接写用户填的值（不 coalesce） | 与 `timeline_items.published_at` 不同：文章发布日期是编辑决定，不是「事情发生的时刻」。 |
+| slug 建好后锁定 | 改 slug 需要重定向规划。 |
+
+### 7. 刻意未实现（不要当成已完成）
+
+- **自动保存**（设计 §3.2）：需要草稿版本表 + 限频 Action。当前用 `beforeunload` 拦截作为替代。
+- **实时预览**（设计 §3.3）：需要受保护的预览路由。
+- **富文本工具栏**（设计 §2.1-3）。
+
+### 8. 验证
+
+`typecheck` 0；`build` 0（12 个静态页，`/admin/posts/new` 与 `/admin/posts/[slug]/edit` 均为 `ƒ`，公开页类型未退化）。
+
+真实端到端（生产模式 `npm run start` + 真实 PG 18.4 + 真实一次性令牌换会话）：
+
+| 脚本 | 结果 | 覆盖 |
+| --- | --- | --- |
+| 登录链路 | **14/14** | 令牌兑换 307 → 会话入库 → 令牌标记已用 → 重放被拒 → 新建页 200 含全部输入框 |
+| 编辑器链路 | **22/22** | 保存草稿（`source=admin`、标签解析、空标题被拒且不覆盖正文）→ 发布（`published`、日期按填写值、`version` 递增）→ 公开页 200 且渲染 MDX → 过期 version 被拒 → 列表页归档 Action → 公开页 404 |
+| 归档/缓存链路 | **6/6** | 归档后公开页 404（证明 `revalidatePath` 生效）、列表不再列出、`post_published` / `post_archived` 事件写入 |
+| 既有回归 `e2e.mjs` | **32/32** | 未退化 |
+
+泄漏扫描：`.next/static` 命中 1 条，仍是 `like-button.tsx` 里给用户看的文案「配置 DATABASE_URL 后可用」（纯字符串，良性）。`%TSD` 加密扫描：0 命中。
+
+### 9. 未验证范围
+
+- 后台只在 **Windows x64 + 本地 PostgreSQL 18.4 + Node 20.16** 上验证。
+- 真实邮件通道未接入：开发环境靠登录页回显 `devLink`，生产路径（`NODE_ENV === 'production'` 时不回显）**未实测**。
+- 编辑器的自动保存 / 实时预览 / 工具栏刻意未实现。
+- 浏览器级 UI 交互（键盘 Tab 顺序、390px 视觉、`beforeunload` 实际弹窗）**未做截图或人工验收**，只做了 HTML 级断言。
+- `revalidatePath` 在多实例部署下的行为未验证（本轮是单进程 `next start`）。
+- Cloudflare Turnstile 未接入（`TURNSTILE_SECRET_KEY` 仍为空）。

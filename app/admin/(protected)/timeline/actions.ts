@@ -1,12 +1,12 @@
 'use server'
 
-import { revalidateTag } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 import { redirect } from 'next/navigation'
 
 import { timelineSaveEventType, writeActivity } from '@/lib/admin/activity'
 import { setTimelineStatus, upsertTimelineItem } from '@/lib/admin/repository'
 import { recordAudit, requireAdmin } from '@/lib/auth/admin'
-import { timelineInvalidationTags } from '@/lib/cache/tags'
+import { revalidateTimelinePaths, timelineInvalidationTags } from '@/lib/cache/tags'
 import { TIMELINE_STATUSES, TIMELINE_TYPES } from '@/lib/timeline/types'
 
 /**
@@ -122,6 +122,9 @@ export async function saveTimelineAction(formData: FormData): Promise<void> {
   }
 
   for (const tag of timelineInvalidationTags(id)) revalidateTag(tag)
+  // 直连 pg 时只有按路径失效真正生效，原因见 lib/cache/tags 的说明。
+  for (const path of revalidateTimelinePaths(id)) revalidatePath(path)
+  revalidatePath('/stats')
 
   redirect(withParam(returnTo, 'ok', result.created ? 'created' : 'updated'))
 }
@@ -161,6 +164,8 @@ export async function changeTimelineStatusAction(formData: FormData): Promise<vo
   }
 
   for (const tag of timelineInvalidationTags(id)) revalidateTag(tag)
+  for (const path of revalidateTimelinePaths(id)) revalidatePath(path)
+  revalidatePath('/stats')
 
   redirect(withParam(returnTo, 'ok', status))
 }
@@ -202,6 +207,8 @@ export async function archiveTimelineAction(formData: FormData): Promise<void> {
   })
 
   for (const tag of timelineInvalidationTags(id)) revalidateTag(tag)
+  for (const path of revalidateTimelinePaths(id)) revalidatePath(path)
+  revalidatePath('/stats')
 
   redirect(withParam(returnTo, 'ok', 'archived'))
 }

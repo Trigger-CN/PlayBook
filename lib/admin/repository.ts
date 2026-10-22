@@ -759,3 +759,230 @@ export async function getAdminAnalytics(days = 30): Promise<AdminAnalytics> {
     },
   }
 }
+
+// ---------------------------------------------------------------------------
+// 文章书写（设计 15-post-editor）
+// ---------------------------------------------------------------------------
+
+/**
+ * 后台文章详情：包含正文与版本号，供编辑器回填。
+ *
+ * 与 `AdminPostRow` 的区别：那个是列表行，只有元数据；编辑器还要
+ * `body`（正文原文）和 `version`（乐观锁版本戳）。
+ */
+export type AdminPostDetail = {
+  slug: string
+  title: string
+  summary: string
+  cover: string | null
+  coverAlt: string | null
+  tags: string[]
+  category: string | null
+  featured: boolean
+  status: string
+  source: string
+  version: number
+  publishedAt: string | null
+  updatedAt: string | null
+  body: string
+}
+
+/**
+ * 读一篇文章的全部字段。
+ *
+ * 日期一律经 `to_char` 取出（`YYYY-MM-DD`），不在 JS 里对 Date 做时区换算 ——
+ * 实测过：库在 Asia/Shanghai 时 `toISOString().slice(0,10)` 会少一天。
+ */
+export async function getPostForEdit(slug: string): Promise<AdminPostDetail | null> {
+  const row = await queryOne<{
+    slug: string
+    title: string
+    summary: string | null
+    cover_url: string | null
+    cover_alt: string | null
+    tags: string[] | null
+    category: string | null
+    featured: boolean
+    status: string
+    source: string
+    version: number
+    published_at: string | null
+    updated_at: string | null
+    body: string | null
+  }>(
+    `select slug, title, summary, cover_url, cover_alt, tags, category, featured,
+            status, source, version,
+            to_char(published_at,'YYYY-MM-DD') as published_at,
+            to_char(updated_at,'YYYY-MM-DD') as updated_at,
+            body
+       from public.posts
+      where slug = $1`,
+    [slug],
+  )
+
+  if (!row) return null
+
+  return {
+    slug: row.slug,
+    title: row.title,
+    summary: row.summary ?? '',
+    cover: row.cover_url,
+    coverAlt: row.cover_alt,
+    tags: row.tags ?? [],
+    category: row.category,
+    featured: row.featured,
+    status: row.status,
+    source: row.source,
+    version: Number(row.version),
+    publishedAt: row.published_at,
+    updatedAt: row.updated_at,
+    body: row.body ?? '',
+  }
+}
+
+/** `slug` 是否已被占用。新建文章时用来给出「换个 slug」而不是撞唯一约束报错。 */
+export async function postSlugExists(slug: string): Promise<boolean> {
+  const row = await queryOne<{ exists: boolean }>(
+    'select exists (select 1 from public.posts where slug = $1) as exists',
+    [slug],
+  )
+  return row?.exists === true
+}
+
+export type PostWriteInput = {
+  slug: string
+  title: string
+  summary: string
+  cover: string | null
+  coverAlt: string | null
+  tags: string[]
+  category: string | null
+  featured: boolean
+  status: string
+  publishedAt: string
+  body: string
+  readingTime: number
+  /** null 表示新建；非 null 时用作乐观锁条件。 */
+  expectedVersion: number | null
+}
+
+export type PostWriteResult =
+  | { ok: true; created: boolean; previousStatus: string | null }
+  | { ok: false; reason: 'conflict' | 'slug_taken' }
+
+/**
+ * 保存文章（新建或更新）。
+ *
+ * ## 为什么写入 `source = 'admin'`
+ *
+ * 正文是在网页上写的，数据库从此是这行内容的权威来源。`db:import` 见到
+ * `admin` 会跳过而不是覆盖 —— 否则在后台改一次、再跑一次导入，改动就没了。
+ *
+ * ## 为什么更新带 `version` 条件
+ *
+ * 两个人的编辑页同时打开时，后保存的那个不该静默覆盖先保存的。带版本戳
+ * 的条件更新让第二次保存影响 0 行，由调用方给出「已被修改，请刷新」。
+ *
+ * ## `published_at` 直接写入用户填的值
+ *
+ * 与时间轴的 `occurred_at` 不同：文章发布日期是编辑决定，不是「事情发生的
+ * 时刻」。作者把日期改到下周，就该在下周出现在列表前面；把它锁成首次发布
+ * 时间反而不符合预期。
+ */
+export async function upsertPost(input: PostWriteInput): Promise<PostWriteResult> {
+  const publishedAt = input.publishedAt.trim() === '' ? null : input.publishedAt
+
+  if (input.expectedVersion === null) {
+    // 新建：先查 slug，把唯一约束冲突变成一句可读的话。
+    if (await postSlugExists(input.slug)) {
+      return { ok: false, reason: 'slug_taken' }
+    }
+
+    await query(
+      `insert into public.posts
+         (slug, title, summary, cover_url, cover_alt, tags, category, featured,
+          reading_time, body, source, status, published_at, updated_at)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'admin',$11,$12,current_date)`,
+      [
+        input.slug,
+        input.title,
+        input.summary,
+        input.cover,
+        input.coverAlt,
+        input.tags,
+        input.category,
+        input.featured,
+        input.readingTime,
+        input.body,
+        input.status,
+        publishedAt,
+      ],
+    )
+
+    return { ok: true, created: true, previousStatus: null }
+  }
+
+  const before = await queryOne<{ status: string }>(
+    'select status from public.posts where slug = $1 and version = $2',
+    [input.slug, input.expectedVersion],
+  )
+  if (!before) return { ok: false, reason: 'conflict' }
+
+  const rows = await query<{ status: string }>(
+    `update public.posts set
+       title = $3, summary = $4, cover_url = $5, cover_alt = $6, tags = $7,
+       category = $8, featured = $9, reading_time = $10, body = $11,
+       source = 'admin', status = $12, published_at = $13,
+       version = version + 1
+     where slug = $1 and version = $2
+     returning status`,
+    [
+      input.slug,
+      input.expectedVersion,
+      input.title,
+      input.summary,
+      input.cover,
+      input.coverAlt,
+      input.tags,
+      input.category,
+      input.featured,
+      input.readingTime,
+      input.body,
+      input.status,
+      publishedAt,
+    ],
+  )
+
+  if (rows.length === 0) return { ok: false, reason: 'conflict' }
+
+  return { ok: true, created: false, previousStatus: before.status }
+}
+
+/**
+ * 只切换文章状态（发布 / 归档 / 转草稿），不动正文。
+ *
+ * 列表页的「发布」「归档」按钮用它 —— 不想为了改一个状态而要求先打开编辑器。
+ * 同样带 `version` 条件，避免把别人刚保存的正文连带回滚到旧状态。
+ */
+export async function setPostStatus(input: {
+  slug: string
+  status: string
+  expectedVersion: number
+}): Promise<{ ok: boolean; previousStatus: string | null; title: string | null }> {
+  const before = await queryOne<{ status: string; title: string }>(
+    'select status, title from public.posts where slug = $1 and version = $2',
+    [input.slug, input.expectedVersion],
+  )
+  if (!before) return { ok: false, previousStatus: null, title: null }
+
+  const rows = await query<{ status: string }>(
+    `update public.posts
+        set status = $3, version = version + 1
+      where slug = $1 and version = $2
+      returning status`,
+    [input.slug, input.expectedVersion, input.status],
+  )
+
+  if (rows.length === 0) return { ok: false, previousStatus: before.status, title: before.title }
+  return { ok: true, previousStatus: before.status, title: before.title }
+}
