@@ -89,7 +89,12 @@ export default async function PostsPage({ searchParams }: { searchParams: Search
             </div>
           ) : (
             result.items.map((post) => (
-              <article key={post.slug} className="toy-card p-4">
+              /*
+               * 整卡可点（决策 D-19）。卡内还有标签 chip 链接，所以不能把整张卡
+               * 改成 <a>（<a> 嵌套 <a> 是非法 HTML）。改用 stretched link：
+               * 标题链接用 ::after 铺满卡片，成为卡片的唯一主链接。
+               */
+              <article key={post.slug} className="toy-card toy-card--pressable p-4">
                 <div className="grid gap-4 sm:grid-cols-[130px_1fr]">
                   <div
                     aria-hidden="true"
@@ -104,11 +109,13 @@ export default async function PostsPage({ searchParams }: { searchParams: Search
                       {post.category ? ` · ${post.category}` : ''}
                     </div>
                     <h2 className="my-1.5 font-display text-xl leading-snug">
-                      <Link href={`/posts/${post.slug}`}>{post.title}</Link>
+                      <Link href={`/posts/${post.slug}`} className="toy-card__link">
+                        {post.title}
+                      </Link>
                     </h2>
                     <p className="text-sm leading-relaxed text-[var(--muted)]">{post.summary}</p>
                     {post.tags.length > 0 ? (
-                      <div className="mt-3 flex flex-wrap gap-2">
+                      <div className="toy-card__aside mt-3 flex flex-wrap gap-2">
                         {post.tags.map((tag) => (
                           <Link
                             key={tag}

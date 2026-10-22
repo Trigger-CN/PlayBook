@@ -277,6 +277,45 @@
     box-shadow: 0 1px 0 var(--card-base);
   }
 
+  /*
+   * 整卡可点（stretched link）：主链接用 ::after 铺满整张卡。
+   *
+   * 为什么不用 <a> 包住整卡：文章列表卡里还有标签 chip 链接，
+   * <a> 嵌套 <a> 是非法 HTML，浏览器会把标签强行拆开、结构错乱。
+   * 这样既保住「每张卡只有一个主链接」的语义，又让整卡都能按下。
+   *
+   * 覆盖层相对卡片定位：.toy-card 自身有 transform，已经是定位包含块。
+   */
+  .toy-card--pressable {
+    position: relative;
+    cursor: pointer;
+  }
+
+  .toy-card--pressable:hover {
+    transform: translateY(-11px);
+    box-shadow: 0 11px 0 var(--card-base);
+    filter: brightness(1.02);
+  }
+
+  .toy-card--pressable:active {
+    transform: translateY(-1px);
+    box-shadow: 0 1px 0 var(--card-base);
+  }
+
+  .toy-card__link::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    /* 与 .toy-card 的圆角一致，避免卡片四角外也响应点击 */
+    border-radius: 18px;
+  }
+
+  /* 卡内的次级链接（标签 chip）必须浮到覆盖层之上，否则永远点不到。 */
+  .toy-card__aside {
+    position: relative;
+    z-index: 1;
+  }
+
   /* --------------------------------------------------------------
    * StatBlock —— 数据块：柔和底、圆角、右下角彩色装饰圆。
    * 强调色由 --stat-accent 提供，避免依赖元素顺序。
