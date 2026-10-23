@@ -1206,3 +1206,113 @@ Material **Icons** 用 `_border` 后缀表示空心态；Material **Symbols** �
 - 深色主题下新图标对比度未单独测算（图标用 `currentColor` 继承文字色，理论上与文字一致，但无实测数据）。
 - 未在真实手机上验证，只用 CDP 的 390×844 视口模拟。
 - `insights` / `auto_awesome` 使用 24×24 坐标系，在同等 `size` 下视觉重量与 960×960 坐标系图标可能略有差异 —— 属视觉问题，未量化。
+
+---
+
+## D-21 主题开关：滑块与图标共用「停靠位」，不用 `justify-between`
+
+**问题来源**：用户报告「顶部的明暗主题开关显示是异常的」，未说明具体表现，因此靠真实浏览器实测定位。
+
+### 1. 实测得到的真实缺陷
+
+CDP 对 `button[aria-pressed]` 及其子元素取 `getBoundingClientRect()`，1440px 视口：
+
+| 量 | 日间态 | 夜间态 |
+| --- | --- | --- |
+| 按钮 / 按钮面 | `74 × 39` | `74 × 39` |
+| 滑块 `left / right` | 1187.5 / 1214.5 | 1214.5 / **1241.5** |
+| 按钮面 `right` | 1238 | 1238 |
+| **滑块右溢出按钮面** | −23.5（未溢出） | **+3.5（溢出）** |
+| 滑块与月亮图标重叠面积 | 0 | **196 px²（14×14 全重叠）** |
+| 滑块中心 vs 按钮面中心 | 同心（52.5） | 同心 |
+| 页头各控件垂直中心 | 全部 52.5，spread 0 | 同 |
+
+**两条并存的缺陷**：
+
+1. **夜间态滑块右移 27px 后超出按钮面 3.5px**，溢出到 `rounded-full` 圆角之外。
+2. **滑块完全压住月亮图标（196 px² = 14×14 整块）**，夜间态看不到月亮。
+
+**日间态同样有问题**：滑块 `left=1187.5` 而按钮面 `left=1164`，即滑块并没有停在左端，而是**夹在太阳与月亮中间偏左**——因为 `justify-between` 把三个子项（14 + 27 + 14 = 55px）摊在 58px 内容宽里，只剩 3px 分给两个间隙，滑块被推到中间。用户看到的就是「滑块没靠边、压着图标」。
+
+### 2. 根因：`justify-between` 不适合三子项的开关
+
+原实现同时用 `flex + justify-between` **又** 给滑块加 `translateX(27px)` 位移。这两套机制互相打架：
+
+- `justify-between` 已经把滑块放在「中间」这个静态位置；
+- `translateX(27px)` 是在那个位置上再加位移，而不是「从左端移到右端」。
+
+于是夜间态位移量 = `27（居中偏移） + 27（位移）`，直接冲出按钮面。
+
+**正确的口径**：滑块的位置只能由**一个**机制决定 —— 要么全交 flex 排布，要么全交绝对定位 + `translateX`。混用必然对不上。
+
+### 3. 设计稿 demo 也有同一个 bug（不能照抄）
+
+`demo/theme-system-demo.html` 用同一套 `.toggle-top{justify-content:space-between}` + `[data-theme=night] .knob{transform:translateX(27px)}`。实测该 demo 夜间态滑块右溢出 **+5.41px**（比 React 版更严重，因为 demo 用文字字形 ☼/☾ 宽度不同）。**所以设计稿不能作为几何正确性的依据**，只有实测量值能。
+
+### 4. 采用的方案
+
+**滑块与两个图标共用同一套 27×27「停靠位」**：左侧停靠位 `left: 6px`、右侧停靠位 `right: 6px`，间距 = `74 − 6 − 6 − 27 = 35px`，正好等于夜间态位移量。
+
+```
+按钮 74×39
+├─ 底座  span  absolute inset-x-0 bottom-0 top-[6px]   背景 --pink-base
+└─ 按钮面 span absolute inset-0 rounded-full            背景 --pink
+   ├─ 滑块  absolute left-[6px] top-[6px] 27×27         translateX(0 | 35px)
+   ├─ 太阳  absolute left-[6px]  top-[6px] 27×27 flex 居中  ← 渲染在滑块之后
+   └─ 月亮  absolute right-[6px] top-[6px] 27×27 flex 居中  ← 渲染在滑块之后
+```
+
+**为什么图标要渲染在滑块之后**：同一定位上下文里，后来者在上。图标叠在滑块之上，于是「滑块停在哪，哪个图标就落在滑块中央」，日/夜两态都不必移动图标，也不会互相遮挡。这是 iOS 风格开关的通行做法，且视觉上把「当前主题」与滑块绑定得更明确。
+
+**为什么用 `left-[6px]` 而不是 flex + `padding`**：绝对定位让位置是一元确定的，不再有「flex 排布 + transform 位移」两个来源。`6px` 与底座的 `top-[6px]` 同值，视觉上滑块的四边留白一致。
+
+### 5. 保留与放弃
+
+| 项 | 处置 |
+| --- | --- |
+| `<Icon name="light_mode" />` / `<Icon name="dark_mode" />` | **保留**，只改外层定位容器 |
+| `aria-pressed` / `aria-label` 日/夜切换 | **保留**，全部 37 项断言里逐条验过 |
+| 两个 `aria-hidden="true"` 的 span（底座、按钮面） | **保留**（图标本身就是 `aria-hidden`） |
+| `useSyncExternalStore` + `MutationObserver` 读 `data-theme` | **保留**，未改 |
+| cookie `THEME_COOKIE` / `max-age=31536000` / `samesite=lax` | **保留** |
+| 根布局静态输出 `data-theme="light"` + head 内联脚本校正（D-08） | **保留**，未引入服务端 `cookies()` |
+| `active:translate-y-[3px]` 按下位移 | **保留**（原样） |
+| `transition-transform duration-200` 滑块位移 | **保留** |
+| `justify-between` + `px-2 py-1` | **移除** —— 正是缺陷来源 |
+| `overflow: hidden` | **坚决不用** —— 会把两个 14px 图标一起裁掉，属掩盖而非修复 |
+
+`prefers-reduced-motion` 无需额外处理：`app/globals.css` 已有全局 `@media (prefers-reduced-motion: reduce)` 规则统一禁用过渡。
+
+### 6. 验证（真实无头 Edge + CDP，1440px 与 390px 两套视口）
+
+**37/37 PASS。** 覆盖日间 → 夜间 → 回到日间三个状态，每个状态都重复同一组几何断言：
+
+| 断言 | 日间 | 夜间 |
+| --- | --- | --- |
+| 开关尺寸 74×39 | 74×39 | 74×39 |
+| 两个图标 14×14 | [14,14] | [14,14] |
+| 图标在按钮面内（不被圆角裁掉） | [true,true] | [true,true] |
+| 滑块四向不溢出（L/R/T/B ≤ 0.5） | −6 / −41 / −6 / −6 | −41 / −6 / −6 / −6 |
+| 滑块停靠端内缩 6px | 6 | 6 |
+| 当前图标与滑块同心（偏差 < 0.6px） | 0 | 0 |
+| 对面图标不被滑块遮挡（重叠 0） | 0 | 0 |
+| 两个图标中心点都命中自身 svg/path | svg / path | svg / path |
+| 与页头其它控件垂直中心 spread | 0.00 | 0.00 |
+
+交互与持久化：`data-theme` 正确翻转 `light ↔ night`、`aria-pressed` `false ↔ true`、`aria-label` 在「切换晚间主题 / 切换日间主题」之间切换、cookie 写入 `playbook-theme=night`、再点一次能回到日间（可逆）。390px 视口下仍 `74×39`、滑块不溢出、图标在面内。
+
+`npm run typecheck` = **0**。dev server 的 `/`、`/posts`、`/timeline`、`/about`、`/stats` 全部 **200**。
+
+### 7. 一眼能看出的布局不变量（回归时先查这两条）
+
+1. **夜间态滑块右边缘不得超出按钮面右边缘**（`knob.right <= cap.right + 0.5`）。
+2. **当前图标必须与滑块同心、对面图标与滑块重叠面积为 0**。
+
+这两条只要有一条不成立，就说明又退回了「flex 排布 + transform 位移」混用。
+
+### 8. 未验证范围
+
+- 未测屏幕阅读器实际朗读顺序（只断言了 `aria-pressed` / `aria-label` 的正确性与切换）。
+- 深色主题下滑块与图标的对比度未做像素级测算（只目视确认可辨）。
+- 未在真实手机上验证，只用 CDP 的 390×844 视口模拟。
+- 触控目标仍是 `74×39`（高 39px < 44px 通用建议值），与修复前一致，未放大 —— 放大到 44px 会改变页头高度与其它控件对齐，属另一个决策。
