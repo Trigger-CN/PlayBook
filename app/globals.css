@@ -3,37 +3,18 @@
 @tailwind utilities;
 
 /* ------------------------------------------------------------------
- * 主题 token
- * 基线决策 D-01：沿用 demo 与 docs/design/modules/01-visual-theme.md
- * 的语义命名（canvas/ink/muted/surface/soft/lilac-base …）。
- * 每个交互色都是 cap/base 成对定义，禁止运行时变暗生成底座。
+ * 几何 token（与颜色无关）
+ *
+ * **颜色 token 不在这里定义**。全部颜色由 `config/palette.ts` 的 5 个源色
+ * 在 `lib/theme/palette-css.ts` 里派生，并由根布局注入到 <head>（决策 D-22）。
+ * 这样做是因为颜色必须按对比度求解，CSS 无法做亮度分支；
+ * 把颜色写死在这里就等于把 5 色体系退化成又一套硬编码。
+ *
+ * 组件只能引用语义 token（var(--coral) / var(--ink) / …），
+ * 禁止在业务代码里写十六进制色值。
  * ------------------------------------------------------------------ */
 @layer base {
   :root {
-    --canvas: #fffdf8;
-    --ink: #211522;
-    --muted: #765f73;
-    --line: rgba(72, 42, 62, 0.12);
-    --surface: #ffffff;
-    --soft: #fff0e6;
-    --shell: #ffc9cb;
-    --grid: rgba(72, 42, 62, 0.08);
-    --focus: #8dd1ff;
-    --shadow: 0 9px 0 rgba(114, 0, 47, 0.13);
-
-    --coral: #ff656c;
-    --coral-base: #72002f;
-    --pink: #f58bc5;
-    --pink-base: #9b078b;
-    --cream: #ffe5c5;
-    --cream-base: #b78122;
-    --mint: #82e2bf;
-    --mint-base: #146044;
-    --sky: #8dd1ff;
-    --sky-base: #1c6199;
-    --lilac: #e989ee;
-    --lilac-base: #90009d;
-
     /* 立体按钮几何（D-02：以 12.3 与 demo 实测为准） */
     --button-height: 52px;
     --button-depth: 8px;
@@ -44,32 +25,6 @@
 
     /* 站点外壳 */
     --header-height: 88px;
-  }
-
-  :root[data-theme='night'] {
-    --canvas: #21162c;
-    --ink: #fff9f1;
-    --muted: #cdbbd0;
-    --line: rgba(255, 230, 204, 0.14);
-    --surface: #31223d;
-    --soft: #3e2b4a;
-    --shell: #4a304f;
-    --grid: rgba(255, 230, 204, 0.08);
-    --focus: #82c7f2;
-    --shadow: 0 9px 0 rgba(15, 6, 21, 0.3);
-
-    --coral: #ff7379;
-    --coral-base: #5a082e;
-    --pink: #e995d8;
-    --pink-base: #70106e;
-    --cream: #ffdfaa;
-    --cream-base: #76511d;
-    --mint: #7fe0bd;
-    --mint-base: #104934;
-    --sky: #82c7f2;
-    --sky-base: #153e6e;
-    --lilac: #d49aff;
-    --lilac-base: #4b246e;
   }
 
   * {
@@ -210,35 +165,40 @@
     padding-inline: 26px;
   }
 
-  /* 色对变体 */
+  /*
+   * 色对变体只换 cap/base，**不写文字色**。
+   * 文字统一由 --on-accent 承担（由最深源色派生，已对 6 个 cap 逐个验证 >= 4.5:1）。
+   * 旧实现里每个变体各写一个硬编码十六进制（#341624 / #42220e / #10392b / …），
+   * 换配色后这些值会与新的按钮面撞色，所以必须收敛到一个派生 token。
+   */
   .toy-button--pink {
     --cap: var(--pink);
     --base: var(--pink-base);
-    color: #341624;
+    color: var(--on-accent);
   }
 
   .toy-button--cream {
     --cap: var(--cream);
     --base: var(--cream-base);
-    color: #42220e;
+    color: var(--on-accent);
   }
 
   .toy-button--mint {
     --cap: var(--mint);
     --base: var(--mint-base);
-    color: #10392b;
+    color: var(--on-accent);
   }
 
   .toy-button--sky {
     --cap: var(--sky);
     --base: var(--sky-base);
-    color: #15344e;
+    color: var(--on-accent);
   }
 
   .toy-button--lilac {
     --cap: var(--lilac);
     --base: var(--lilac-base);
-    color: #3c1440;
+    color: var(--on-accent);
   }
 
   /* --------------------------------------------------------------

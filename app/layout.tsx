@@ -2,8 +2,10 @@ import type { Metadata } from 'next'
 
 import './globals.css'
 
+import { resolvePaletteColors } from '@/config/palette'
 import { siteConfig } from '@/config/site'
 import { DEFAULT_THEME, THEME_COOKIE } from '@/lib/theme-shared'
+import { buildPaletteCss } from '@/lib/theme/palette-css'
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
@@ -39,10 +41,27 @@ export const metadata: Metadata = {
  */
 const themeScript = `(function(){try{var m=document.cookie.match(/(?:^|; )${THEME_COOKIE}=([^;]+)/);var t=m&&m[1];if(t==='light'||t==='night'){document.documentElement.dataset.theme=t;}}catch(e){}})();`
 
+/**
+ * 5 色配色体系（决策 D-22）：把 `config/palette.ts` 的 5 个颜色派生成全部语义
+ * token，在 `<head>` 里以 `<style>` 输出。
+ *
+ * 为什么用 `<style>` 而不是给 `<html>` 加 inline style：
+ * 派生结果同时包含 `:root`（日间）与 `:root[data-theme='night']`（夜间）两套选择器，
+ * inline style 只能表达一个元素上的一组属性，无法携带选择器。
+ *
+ * 为什么这段颜色不写在 `app/globals.css` 里：
+ * 颜色必须由 5 个源色算出来，CSS 无法做对比度分支；写死在 CSS 里就等于
+ * 把 5 色体系退化成「又一套硬编码」。`globals.css` 只保留与颜色无关的几何 token。
+ *
+ * 这段 CSS 是构建期常量，因此不破坏静态渲染。
+ */
+const paletteCss = buildPaletteCss(resolvePaletteColors())
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="zh-CN" data-theme={DEFAULT_THEME} suppressHydrationWarning>
       <head>
+        <style dangerouslySetInnerHTML={{ __html: paletteCss }} />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>{children}</body>

@@ -26,7 +26,7 @@ export function TimelineCard({ item, className }: TimelineCardProps) {
         </time>
         <span
           className="inline-flex items-center gap-1 rounded-full px-2 py-[3px] text-[11px] font-extrabold"
-          style={{ background: `var(--${typeStyle.tone})`, color: '#211522' }}
+          style={{ background: `var(--${typeStyle.tone})`, color: 'var(--on-accent)' }}
         >
           <Icon name={typeStyle.icon} size={13} />
           {typeStyle.label}

@@ -65,7 +65,7 @@ export async function ActivityFeed({ limit = 8 }: { limit?: number }) {
         const label = EVENT_LABELS[entry.eventType] ?? entry.eventType
         const content = (
           <>
-            <span className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-extrabold" style={{ background: 'var(--cream)', color: '#4a2d11' }}>
+            <span className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-extrabold" style={{ background: 'var(--cream)', color: 'var(--on-accent)' }}>
               {label}
             </span>
             <span className="min-w-0 flex-1 truncate text-sm">

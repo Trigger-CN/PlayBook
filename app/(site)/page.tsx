@@ -49,7 +49,7 @@ export default async function HomePage() {
         <div>
           <span
             className="inline-flex items-center gap-2 rounded-full px-3 py-[7px] text-xs font-extrabold"
-            style={{ background: 'var(--cream)', color: '#4a2d11' }}
+            style={{ background: 'var(--cream)', color: 'var(--on-accent)' }}
           >
             PERSONAL WEB / PLAYBOOK
           </span>
@@ -90,7 +90,7 @@ export default async function HomePage() {
             </div>
             <div
               className="grid min-h-[118px] place-items-center rounded-[19px] text-[44px] font-black"
-              style={{ background: 'var(--cream)', color: '#352111' }}
+              style={{ background: 'var(--cream)', color: 'var(--on-accent)' }}
             >
               2026
             </div>

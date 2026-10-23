@@ -1316,3 +1316,247 @@ CDP 对 `button[aria-pressed]` 及其子元素取 `getBoundingClientRect()`，14
 - 深色主题下滑块与图标的对比度未做像素级测算（只目视确认可辨）。
 - 未在真实手机上验证，只用 CDP 的 390×844 视口模拟。
 - 触控目标仍是 `74×39`（高 39px < 44px 通用建议值），与修复前一致，未放大 —— 放大到 44px 会改变页头高度与其它控件对齐，属另一个决策。
+
+---
+
+## D-22 · 5 色配色体系：`config/palette.ts` 是唯一颜色来源，其余全部由它派生
+
+### 1. 需求与判定标准
+
+用户要求：建立 **5 种**颜色的配色体系；**web 中所有元素都遵循这些配色**；这 5 种颜色**可随意配置**；参考 `img/` 里的色卡。
+
+四条需求逐条落到可验收的标准上：
+
+| 需求 | 可验收的形态 |
+| --- | --- |
+| 「5 种颜色作为体系」 | 5 个色值是**唯一来源**，其余每个颜色都由它们派生，不存在第 6、第 7 个自由选择的颜色 |
+| 「所有元素都遵循」 | 全部语义 token（canvas / ink / muted / line / surface / soft / shell / focus / shadow + 6 个色对）都由这 5 色产出；业务代码里不得出现十六进制 |
+| 「可随意配置」 | 改一处 5 元组即全站跟随；换色后**自动**保证正文可读 |
+| 「参考色卡」 | 用户 5 张色卡作为预设，逐位对应，可直接切换 |
+
+**这不是「把 6 个强调色换成 6 个新色值」**。改造前的项目用 6 个彼此独立的色对（coral / pink / cream / mint / sky / lilac）+ 一套中性色，共十几个硬编码决策点。若只是换色值，仍然是十几个点各改一次，不构成「体系」。因此本决策的实质是**把颜色决策点从十几个收敛到 5 个**。
+
+### 2. 5 个颜色的槽位语义（固定，不可改）
+
+| 槽位 | 角色 | 派生去向 |
+| --- | --- | --- |
+| `--palette-1` | 主强调色 | coral（主 CTA）、pink 与 lilac（提亮或与 p3 混合）、shell |
+| `--palette-2` | 次强调色 | mint、cream（提亮成浅底）、canvas / surface / soft（都是它的高亮度淡彩） |
+| `--palette-3` | 第三强调色 | sky、focus 焦点环、lilac（与 p1 混合） |
+| `--palette-4` | 深中性色 1 | 预留槽位（当前由 5 号派生，保留以对齐色卡的五色结构） |
+| `--palette-5` | 深中性色 2（最深） | canvas / ink / muted / line / grid / surface / shadow 的压暗来源 |
+
+**硬约束：最深的那位必须放第 5 位。** 正文色 `--ink` 由 p5 压暗得到；若把浅色放在第 5 位，正文会变成浅字压浅底，无论怎么求解对比度都得不到自然的结果（只能被 `ensureContrast` 强行推成近乎纯黑，等于放弃了配色的中性基调）。
+
+### 3. 为什么派生放在 TypeScript，而不是 CSS `color-mix()`
+
+原始计划（WorkMap `plan-e0ad1317` 的描述）写的是「globals.css 用 `color-mix()` 派生」。实现时改掉了，三条理由：
+
+1. **对比度必须能算。** 按钮面永远是亮色、文字永远是暗色，这需要真实的 WCAG 相对亮度判断与分支。CSS 无法按亮度分支，只能写死；TS 可以算。
+2. **可以在 Node 里断言。** 派生结果与对比度能直接跑脚本验证，不用开浏览器就能发现「某个预设的按钮文字看不清」。
+3. **不依赖浏览器特性。** `color-mix()` 在旧浏览器上整条失效，会导致颜色全丢。
+
+代价是**换配色需要重新构建**。这是可接受的：配色属于站点身份，不是运行时开关；而且保住构建期常量恰好是不破坏静态渲染（D-08 / REQ-NFR-001）的前提。
+
+### 4. 白与黑不是第 6、第 7 个颜色
+
+派生需要「往亮里调」与「往暗里调」两个端点，由纯白 `#ffffff` 与纯黑 `#000000` 承担。它们**不参与配色决策**，只作为混合端点 —— 任何配色系统都躲不开这一步。因此 `WHITE` / `BLACK` 是派生层的常量，不在 `config/palette.ts` 的 5 元组里，也不算「第六种颜色」。
+
+### 5. 核心算法：以对比度为约束求解，而不是猜混合比例
+
+第一版用固定混合比例（例如「往白里混 62% 得到 muted」）写死派生，跑出 **297/324（27 项 FAIL）**：
+
+```
+FAIL  [classic/light] --muted on --canvas >= 3.5 :: 2.35 (#aba6ab on #f9fefc)
+FAIL  [tide/light]    --ink on --canvas >= 7    :: 6.41 (#615c56 on #fefbf7)
+FAIL  [tide/light]    --muted on --canvas >= 3.5 :: 1.62 (#cac8c5 on #fefbf7)
+FAIL  [harbor/light]  --muted on --canvas >= 3.5 :: 1.95 (#a8b8c7 on #f4fcfb)
+FAIL  [meadow/light]  --muted on --canvas >= 3.5 :: 1.73 (#c2c0be on #fdf9f7)
+FAIL  [tide/night]    --ink on --surface >= 7   :: 3.96 (#fef9f4 on #817c75)
+```
+
+根因：不同色卡的明度差得很远（`#0063bf` 与 `#59ddaf` 亮度天差地别），固定比例不可能同时成立。只调比例数值则是**每次调好一套就弄坏另一套**，无解。
+
+改用：
+
+```
+ensureContrast(color, against | against[], target, direction: 'lighter' | 'darker')
+```
+
+- 起点已达标 → 直接返回（不无故改动配色本来的观感）。
+- 否则朝 `direction` 方向以 **0.02 步长**逐步调整，直到达到 `target`。
+
+于是「文字读得清」是**构造出来的保证**，不是碰巧。
+
+#### 两个必需的细节（都是实测踩出来的）
+
+1. **`against` 必须能传数组，且必须全部达标。** 文字实际会同时出现在 `canvas` 与 `surface` 上，只对其中一个求解会在另一个上不达标。这是实测的 5 项 FAIL：`meadow/light` 的 `--muted` 在 canvas 上 4.42、`tide/night` 的 `--ink` 在 surface 上 6.98。日间 `surface` 比 `canvas` 浅，深色文字对比度更高，最差情况是 canvas；夜间 `surface` 比 `canvas` 亮，浅色文字对比度更低，最差情况是 surface。所以所有文字 token 一律传 `[canvas, surface]`。
+2. **比较前必须先过 hex 舍入。** 最终写进 CSS 的是 `toHex()` 舍入后的值，拿未舍入的浮点去判定会出现「算出来 7.00、写出去 6.98」。做法是 `const round = (c) => parseHex(toHex(c))`，refs、起点、每个候选值全部先 `round` 再判定。
+
+### 6. 日夜两套派生公式
+
+日间（`deriveLightTokens`）：
+
+```
+canvas  = tint(p2, 0.95)                                  // 次强调色的高亮淡彩
+surface = tint(p2, 0.985)
+ink     = ensureContrast(shade(p5, 0.16), [canvas, surface], 7, 'darker')
+muted   = ensureContrast(mix(ink, canvas, 0.45), [canvas, surface], 4.5, 'darker')
+onAccent= shade(p5, 0.34)
+soft    = tint(p2, 0.84)
+shell   = tint(p1, 0.72)
+line    = alpha(p5, 0.12)
+grid    = alpha(p5, 0.08)
+focus   = ensureContrast(p3, canvas, 3, 'darker')
+shadow  = `0 9px 0 ${alpha(shade(p5, 0.1), 0.16)}`
+
+coral/pink/cream/mint/sky/lilac  = capOn(基底, onAccent)   // 提亮到 on-accent 达 4.5:1
+coral-base = shade(p1, 0.58)   pink-base  = shade(p1, 0.5)
+cream-base = shade(p2, 0.45)   mint-base  = shade(p2, 0.45)
+sky-base   = shade(p3, 0.45)
+lilac-base = shade(mix(p1, p3, 0.5), 0.5)
+```
+
+夜间（`deriveNightTokens`）：
+
+```
+canvas  = shade(p5, 0.34)
+surface = tint(canvas, 0.08)          // 从 canvas 提亮，不是从 p5 提亮
+ink     = ensureContrast(tint(p2, 0.9), [canvas, surface], 7, 'lighter')
+muted   = ensureContrast(mix(canvas, ink, 0.6), [canvas, surface], 4.5, 'lighter')
+soft    = tint(canvas, 0.14)
+shell   = tint(p1, 0.18)
+focus   = ensureContrast(tint(p3, 0.25), canvas, 3, 'lighter')
+shadow  = `0 9px 0 ${alpha(BLACK, 0.3)}`
+各 base = shade(…, 0.6 ~ 0.7)
+```
+
+两处起点选择的理由：
+
+- **日间 `muted` 的起点用「正文与画布的中点」，而不是固定往白里混。** 浅色卡上往白里混会直接把次要文字糊掉。
+- **夜间 `--surface` 必须从 `canvas` 提亮，不能从 `p5` 提亮。** 后者在浅色卡上会直接跳到中间灰：`tide` 卡的最深色是 `#736d66`（本身已是中灰），再提亮 10% 得到 `#817c75`，夜间一片灰蒙蒙，`--ink` 在其上只有 3.96:1。改从 `canvas`（已压暗 34%）提亮 8%，只会得到「比画布略亮的表面」，符合同一个玩具盒关灯之后的设计意图。
+
+### 7. 注入方式：`<style>`，不是 inline style
+
+根布局 `app/layout.tsx` 的 `<head>` 里：
+
+```tsx
+<style dangerouslySetInnerHTML={{ __html: paletteCss }} />
+<script dangerouslySetInnerHTML={{ __html: themeScript }} />
+```
+
+**为什么不能用给 `<html>` 加 inline style**：派生结果同时包含 `:root`（日间）与 `:root[data-theme='night']`（夜间）两套选择器。inline style 只能表达一个元素上的一组属性，无法携带选择器，夜间态会整段失效。
+
+**这段 CSS 是构建期常量**（模块顶层 `const paletteCss = buildPaletteCss(resolvePaletteColors())`），因此不破坏静态渲染：根布局仍然没有调用 `cookies()` / `headers()`，D-08 与 REQ-NFR-001 都不破。`<style>` 放在 `<script>` 之前 —— 配色必须先于主题脚本生效。
+
+### 8. `globals.css` 不再定义任何颜色 token
+
+`app/globals.css` 的 `:root` 现在只剩几何：`--button-height / --button-depth / --button-radius / --button-hover-lift / --button-pressed-reveal / --button-duration / --header-height`。
+
+**这是「5 色体系不退化回硬编码」的结构性保证**：颜色只由一个地方产出，因此不存在「两处定义谁覆盖谁」的顺序问题，也不会有某个人顺手在 CSS 里加一个十六进制而没人发现。文件顶部写了注释说明这一点。
+
+配套改动：
+
+- 6 个 `ToyButton` 色对变体原先各自写死一个文字色（`#341624 / #42220e / #10392b / #15344e / #3c1440`），换配色后这些值会与新的按钮面撞色。全部收敛为 `color: var(--on-accent)`。
+- `--on-accent` 由 p5 派生（`shade(p5, 0.34)`），并对 6 个 cap **逐个**验证 ≥ 4.5:1。
+
+### 9. 组件硬编码颜色清除
+
+盘点（`Select-String` 全量扫描 `var(--*)` 与 `#[0-9a-fA-F]{3,8}` / `rgba(`）结论：**组件本来就只引用语义 token，没有散落的十六进制**，只有 6 处需要清除。
+
+| 文件 | 原值 | 改为 |
+| --- | --- | --- |
+| `app/(site)/page.tsx:52` | `#4a2d11`（cream 徽标） | `var(--on-accent)` |
+| `app/(site)/page.tsx:93` | `#352111` | `var(--on-accent)` |
+| `components/site/activity-feed.tsx:68` | `#4a2d11` | `var(--on-accent)` |
+| `components/timeline/timeline-card.tsx:29` | `#211522` | `var(--on-accent)` |
+| `components/ui/theme-toggle.tsx:68` | `#28152b` | `var(--on-accent)` |
+| `components/ui/theme-toggle.tsx:74` | `inset -3px -3px 0 rgba(100,61,0,.12)` | `inset -3px -3px 0 var(--line)` |
+
+改造后同一扫描只剩 **1 条命中**，且是 `globals.css` 里我自己写的注释文字（`#341624 / #42220e / #10392b / …`），硬编码归零。
+
+**结论：只要重建 token 派生层，全站自动跟随 5 色，无需逐个改组件。** 这正是「5 色是唯一来源」这个架构选择带来的直接收益。
+
+### 10. 三种配置方式（按优先级）
+
+1. `config/palette.ts` 里 `customColors: PaletteColors | null` —— **最高优先级**。填了它，环境变量与默认预设都失效。
+2. 环境变量 `NEXT_PUBLIC_PALETTE=<预设 id>`。
+3. `DEFAULT_PALETTE_ID`（默认 `'classic'`）。
+
+```ts
+// 方式 1（最简单）：直接写 5 个色值
+export const customColors: PaletteColors | null = ['#主强调', '#次强调', '#第三强调', '#深中性1', '#最深']
+
+// 方式 2：换预设
+export const DEFAULT_PALETTE_ID: PaletteId = 'harbor'
+```
+
+**环境变量写错时静默回落到默认预设** —— 配色配错不应该让整站构建失败。
+
+### 11. 6 套预设
+
+| id | 名称 | 5 色 |
+| --- | --- | --- |
+| `classic` | 玩具盒（项目原有基线，默认） | `#ff656c` `#82e2bf` `#8dd1ff` `#3a2430` `#211522` |
+| `tide` | 潮汐（色卡 1） | `#64f1e8` `#f2ac63` `#f27a63` `#667372` `#736d66` |
+| `harbor` | 港湾（色卡 2） | `#0063bf` `#28bfb8` `#bfad5a` `#bf7600` `#19436b` |
+| `sunrise` | 日出（色卡 3） | `#24bbec` `#eda724` `#ed6724` `#47646e` `#6e6047` |
+| `meadow` | 草甸（色卡 4） | `#59ddaf` `#de8959` `#de5b59` `#555e5b` `#5e5855` |
+| `ember` | 余烬（色卡 5） | `#f8105e` `#c43363` `#91435d` `#5e3e49` `#332c2e` |
+
+`classic` 是项目原有视觉基线，默认选中，**保证引入本体系后站点外观不发生回归**。后 5 套逐位取自用户参考色卡（`img/Snipaste_2026-10-23_*.png`），顺序与色卡的亮→暗排列逐位对应。
+
+### 12. 可读性目标（构造出来的保证）
+
+| token | 目标 | 背景 |
+| --- | --- | --- |
+| `--ink` | ≥ **7:1**（AAA） | canvas **与** surface 都要满足 |
+| `--muted` | ≥ **4.5:1**（AA） | canvas **与** surface 都要满足 |
+| `--on-accent` 在 6 个 cap 上 | 各自 ≥ **4.5:1**（AA） | 逐个验证 |
+| cap vs base | ≥ **2:1** | 保证立体按钮的厚度感不消失 |
+| `--focus` | ≥ **3:1**（非文本） | canvas |
+| 5 个源色两两 | 曼哈顿距离 ≥ **16** | 保证色卡不是同一色重复五次 |
+| 夜间 canvas 与日间 canvas | 通道差 ≥ **5** | 保证两态确实是两套配色 |
+
+**源色可辨阈值为什么是 16 而不是 24**：草甸卡的 `#555e5b` 与 `#5e5855` 曼哈顿距离只有 **21** —— 那是**用户色卡本来的设计**，两个相近的深中性色用来产生细微层次。阈值定在 24 等于在**惩罚用户的配色选择**，而不是在验证代码。真正需要保证的只是「不是同一色重复五次」，16 足够。这个理由写在了验证脚本的注释里，避免以后有人「顺手调严」。
+
+### 13. 验证
+
+#### 13.1 派生层（Node，`330/330 PASS`）
+
+`.me/tmp/palette-check.mjs` 用 `typescript.transpileModule` 把 `lib/theme/palette-css.ts` **就地转译后 import**，预设从 `config/palette.ts` 用正则抠出 —— **不复制公式、不复制色值**，验证的就是产品代码本身。对 6 套预设 × 日夜两态跑 330 项断言，全通过。
+
+#### 13.2 真实浏览器（生产构建副本 3100 端口，`24/24 PASS`）
+
+CDP + 无头 Edge，量 `getComputedStyle` 实际色值：
+
+- 5 个源变量存在且非空；27 个派生 token 无缺失。
+- `body` 背景 = `--canvas`、文字 = `--ink`；卡片背景 = `--surface`。
+- 主 CTA 底座 = `--coral-base`、按钮面 = `--coral`（**注意 `.toy-button` 是外层底座，`.toy-button__top` 才是按钮面**；且页头「登录」也带 `.toy-button` 类，选择器必须挑「不含 `toy-button--` 变体类」的那个 —— 这是我探针一开始的 bug，产品代码无缺陷）。
+- 三个按钮（主 CTA / cream / pink）文字 vs **按钮面**背景对比度 ≥ 4.5。
+- 全部 svg 填充色都能匹配某个派生 token（`--ink` / `--on-accent` / `--muted`，容差 ±2）。
+- 5 个页面（`/`、`/posts`、`/timeline`、`/about`、`/stats`）token 一致。
+- 夜间态 token 正确切换，正文对比度 18.14；1440 与 390 两套视口都无横向溢出。
+
+#### 13.3 6 套预设 × 日夜 12 张整页图（已逐张目视确认）
+
+配色是构建期常量，逐套 build 六次代价过大。改用同一份 `buildPaletteCss()` 在真实页面上注入该预设的 CSS，再整页截图。**注入路径先做了 sanity**：注入 `classic` 后读到的 `--coral` / `--canvas` / `--palette-1` 与构建产物自带值**完全一致**（`SANITY_CLASSIC_MATCH=true`），证明注入的就是构建会产出的东西。
+
+目视结论：6 套预设全部成立，页面结构、按钮立体感、卡片层次都保持；`classic` 与改造前视觉一致（基线未回归）；5 张色卡的原色在实际页面上的观感符合色卡意图（tide 青+奶油、harbor 蓝+米、sunrise 橙蓝、meadow 绿+陶土、ember 玫红+酒红）；**夜间 6 套都没有一套变成灰蒙蒙一片**；正文与按钮文字在全部 12 格里都清晰可读。
+
+#### 13.4 构建
+
+- `npm run typecheck` = **0**。
+- 孤立副本 `BC_BUILD=0`（`robocopy` + `mklink /J`，未碰用户 `.next`），First Load JS 与路由类型均未退化。
+- 生产构建 HTML 确认 `HAS_STYLE_TAG=True`、`HAS_PALETTE1=True`、`HAS_CANVAS=True`、`LEN=61181`。
+
+> **一个必须记录的误判。** 验证过程中我曾用 `Invoke-WebRequest` 检查 HTML 得到 `HAS_PALETTE1=False`，据此怀疑 Next.js 在 dev 下剥离了 `<head>` 里手写的 `<style>`。**这个结论是错的**：那次请求本身失败（`ERR=无法连接到远程服务器`），`$r` 保留了上一次成功请求的**陈旧值**。真实值是 `True`，已在生产构建副本上确认。教训：`Invoke-WebRequest` 失败时 `$r` 不会清空，用它做断言前必须先确认 `$r` 是本次请求的产物。
+
+### 14. 未验证范围
+
+- 6 套预设里只有 `classic` 做了完整的浏览器 DOM/几何实测（`24/24`），其余 5 套做的是派生层 330 项断言 + 12 张整页图目视，**没有逐套跑 `getComputedStyle` 断言**。
+- 屏幕阅读器实际朗读顺序未测。
+- 真实手机未测，只用 CDP 的 390×844 视口模拟。
+- 色卡原色与派生色的**像素级**观感差异未量化（只目视）。
+- 触控目标仍为 39px 高的主题开关（低于 44px 通用建议值），与 D-21 一致，刻意未动。
+- 换配色需重新构建这一点的用户体验未优化（没有提供运行时预览页）。

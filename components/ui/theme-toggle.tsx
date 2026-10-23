@@ -65,13 +65,15 @@ export function ThemeToggle() {
       <span
         aria-hidden="true"
         className="absolute inset-0 rounded-full transition-transform active:translate-y-[3px]"
-        style={{ background: 'var(--pink)', color: '#28152b' }}
+        style={{ background: 'var(--pink)', color: 'var(--on-accent)' }}
       >
         <span
           className="absolute left-[6px] top-[6px] h-[27px] w-[27px] rounded-full transition-transform duration-200"
           style={{
             background: 'var(--cream)',
-            boxShadow: 'inset -3px -3px 0 rgba(100,61,0,.12)',
+            // 滑块的内阴影用 --line（由最深色源色派生），不再写死 rgba，
+            // 否则换个配色就会在滑块上留一块不相干的褐色。
+            boxShadow: 'inset -3px -3px 0 var(--line)',
             transform: isNight && mounted ? 'translateX(35px)' : 'translateX(0)',
           }}
         />
