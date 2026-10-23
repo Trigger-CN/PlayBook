@@ -62,7 +62,9 @@ export default async function HomePage() {
             {siteConfig.bio}
           </p>
           <div className="mt-7 flex flex-wrap gap-4">
-            开始阅读 <Icon name="arrow_forward" size={17} />
+            <ToyButton href="/posts">
+              开始阅读 <Icon name="arrow_forward" size={17} />
+            </ToyButton>
             <ToyButton href="/about" variant="pink">
               关于我 <Icon name="auto_awesome" size={17} />
             </ToyButton>
