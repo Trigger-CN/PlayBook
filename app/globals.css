@@ -91,8 +91,17 @@
     padding: 0 0 var(--depth);
     border: 0;
     border-radius: var(--radius);
-    color: inherit;
-    background: var(--base);
+    /*
+     * 文字色必须是 --on-accent，不能是 inherit（D-23 修正）。
+     *
+     * D-22 把 6 个 **色对变体** 的文字色统一改成 var(--on-accent)，
+     * 但 **默认变体（coral）没有写** —— 它继承的 color 最终落到 body 上的 --ink。
+     * 等价性断言只比 token 字符串，抓不到这类「某个变体漏写」；
+     * 只有真实按钮的 computed color 断言才能发现。
+     *
+     * 后果：默认配色下就被 --ink 压得偏淡，用户把 p5 拉亮后直接掉到 1.9:1。
+     */
+    color: var(--on-accent);
     cursor: pointer;
     font: inherit;
     font-weight: 800;
@@ -536,5 +545,57 @@
   .prose-playbook h3 a {
     color: inherit;
     text-decoration: none;
+  }
+
+  /* --------------------------------------------------------------
+   * 配色实验室的 range 滑块（决策 D-23）
+   *
+   * 只重绘轨道与拇指，颜色一律取自派生 token（--line / --surface / --ink）。
+   * 轨道显式给 min-height: 22px —— 原生 range 的默认命中高度在不同浏览器
+   * 上只有 16~20px，低于 44px 触控建议值；这里只把 hit area 放大，
+   * 视觉粗细仍由 ::-webkit-slider-runnable-track 决定，不改设计。
+   * -------------------------------------------------------------- */
+  .palette-lab__range {
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 22px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    touch-action: pan-y;
+  }
+
+  .palette-lab__range::-webkit-slider-runnable-track {
+    height: 8px;
+    border-radius: 999px;
+    background: var(--line);
+  }
+
+  .palette-lab__range::-moz-range-track {
+    height: 8px;
+    border-radius: 999px;
+    background: var(--line);
+  }
+
+  .palette-lab__range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    margin-top: -6px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: inset -3px -3px 0 var(--line), 0 0 0 2px var(--ink);
+  }
+
+  .palette-lab__range::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--surface);
+    box-shadow: inset -3px -3px 0 var(--line), 0 0 0 2px var(--ink);
   }
 }

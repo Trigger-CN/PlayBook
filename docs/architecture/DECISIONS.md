@@ -1560,3 +1560,197 @@ CDP + 无头 Edge，量 `getComputedStyle` 实际色值：
 - 色卡原色与派生色的**像素级**观感差异未量化（只目视）。
 - 触控目标仍为 39px 高的主题开关（低于 44px 通用建议值），与 D-21 一致，刻意未动。
 - 换配色需重新构建这一点的用户体验未优化（没有提供运行时预览页）。
+
+---
+
+## D-23 · 首页 hero 改为「配色实验室」：运行时也能派生，且不比构建期松
+
+### 1. 需求
+
+把首页「快捷入口」上方的标题展示区（原先是静态的 NOW PLAYING 装饰卡）换成可玩性更强的内容：**用户可以选择控制 5 个主题色，并用 HSL 三个滑块调其中某个颜色**。
+
+这直接冲击 D-22 的一个核心设计：配色是**构建期常量**（`<head>` 注入），因为只有这样才能保住根布局的静态渲染（D-08 / REQ-NFR-001）。要让它运行时可调，就不能靠重新构建。
+
+### 2. 最关键的决定：公式只留一份，但 server-only 守卫不能丢
+
+两条路：
+
+| 方案 | 后果 |
+| --- | --- |
+| 在客户端复制一份派生公式 | 运行时预览与构建产物**必然漂移**，两份公式迟早对不上 |
+| 把公式拆进客户端安全的模块 | 服务端与客户端跑同一份代码，但 D-22 那层 server-only 保护要重新安排 |
+
+选了后者，拆成：
+
+```
+lib/theme/palette-core.ts   纯色彩数学。无 server-only、无 process.env、无 DOM、无副作用
+        ↑                   服务端与客户端都 import 它
+lib/theme/palette-css.ts    `import 'server-only'` + re-export 薄壳
+        ↑                   只有 app/layout.tsx 从这里 import
+```
+
+**为什么薄壳还要留着 server-only**：一旦有人在客户端组件里 `import '@/lib/theme/palette-css'`，构建期就报错，而不是悄悄把「在构建期决定站点配色」这条路径打进 bundle。
+
+顺带一个直接收益：`deriveLightTokens` / `deriveNightTokens` 的入参类型从 `PaletteColors`（定长 5 元组）放宽为 `readonly string[]` + 运行时校验长度 —— 因为客户端状态是 `useState<string[]>`，类型上不可能是定长元组。**放宽类型不等于放宽约束**，长度校验留在了 `parseColors()` 里。
+
+### 3. 拆模块的正确性怎么证明：逐字节等价
+
+拆模块最危险的是「顺手改掉某个色值」。所以写了 `.me/tmp/palette-equiv.mjs`：
+
+- 用 `git show 4819bf1:lib/theme/palette-css.ts` 取出**拆分前的旧实现**，不经过我手改。
+- 新旧两份各自用 `typescript.transpileModule` 转译后 import。
+- 断言 `buildPaletteCss()` 的**整段输出字符串完全相等**，外加日夜每个 token 逐项比对、HSL 往返、灰度色相为 0、`contrastRatioOfHex` 与 RGB 路径同值。
+
+**384/384 PASS**。这条断言在后续每一次改派生层时都作为硬门槛重跑 —— 它抓住了三次回归（见第 5 节）。
+
+### 4. 客户端实现：三个不变量
+
+#### 4.1 初始值必须来自 props，不能自己读 DOM
+
+组件若在首帧去读 `getComputedStyle` 决定初始色，服务端渲染结果与客户端首帧必然对不上，触发 hydration mismatch 并让整个 hero 重渲染。做法是服务端把 `resolvePaletteColors()` 的结果作为 prop 传下去，首帧两端完全一致。实测控制台**零 hydration 错误**。
+
+#### 4.2 改动用**独立的** `<style>` 覆盖层，不改构建期那段
+
+```ts
+const OVERRIDE_STYLE_ID = 'playbook-palette-override'
+// 未改动 → 移除该元素，页面完全回到静态产物状态
+// 已改动 → 写入 buildPaletteCss(colors)，位置在构建期样式之后，后写者胜出
+```
+
+构建期注入的那段 `<style>` 不带 id，两者互不干扰。**用 `<style>` 而不是给 `<html>` 写 inline style**，理由与 D-22 相同：派生结果同时包含 `:root` 与 `:root[data-theme='night']` 两套选择器，inline style 只能表达一个元素的一组属性，会把夜间那套整段压掉。实测确认覆盖层文本包含 `:root[data-theme='night']`。
+
+#### 4.3 单一数据源：只存 HSL，hex 由它派生
+
+这是**修掉的真 bug**。第一版同时存 `colors: string[]` 与 `hsls: Hsl[]`，并且在 `setHsls` 的 updater 里又调 `setSlotColor`：
+
+```ts
+setHsls((prev) => {
+  const next = prev.map(...)
+  setSlotColor(index, hslToHex(next[index]))   // ← 在 updater 里触发另一个 setState
+  return next
+})
+```
+
+一个事件里触发两个 setState，两路数据互相覆盖。实测表现是「拖了没反应」与「连续拖只出一个值」（`[#e2b8ba]` 只有 1 个颜色）。改为：
+
+```ts
+const [hsls, setHsls] = useState<Hsl[]>(...)
+const colors = useMemo(() => hsls.map(hslToHex), [hsls])
+// 只有一个写入口
+const handleSlider = (index, key, raw) =>
+  setHsls((prev) => prev.map((h, i) => (i === index ? { ...h, [key]: raw } : h)))
+```
+
+**为什么不直接存 hex**：饱和度拖到 0 时色相在数学上无定义，从 hex 反推会丢色相，把饱和度拖回来就会跳成红色。存 HSL 才能让三个滑块各自独立可逆。
+
+### 5. 修掉的三个真实缺陷（全部由断言暴露，不是观感猜测）
+
+#### 5.1 默认 coral 按钮的文字色是 `inherit`，不是 `--on-accent`
+
+D-22 把 6 个**色对变体**（pink / cream / mint / sky / lilac / 及 coral 变体）的文字色统一改成 `var(--on-accent)`，**但默认变体 `.toy-button` 本身没写**，它的 `color: inherit` 最终继承到 `body` 的 `--ink`。
+
+决定性证据（`.me/tmp/diag.mjs` 并排打印 `<style>` 与 computed）：
+
+```
+styleOnAccent   = #3d263f
+computedOnAccent= #3d263f
+btnTextColor    = rgb(77, 49, 80)   ← 这是 #4d3150，即 --ink，不是 --on-accent
+btnCapBg        = rgb(255, 101, 108) ← --coral，按钮面本身是对的
+```
+
+后果：默认配色下文字就被 `--ink` 压得偏淡；用户把 p5 拉亮后直接掉到 **1.9:1**。修法是给 `.toy-button` 补 `color: var(--on-accent)`。
+
+**为什么 384/384 等价性断言没抓到**：它只比 token 字符串，不看某个 CSS 选择器有没有引用这些 token。这类「某个变体漏写」只有真实按钮的 computed color 断言才能发现。这条值得记住：**token 层正确 ≠ 页面上每个消费点都正确**。
+
+#### 5.2 色槽标签在深色槽位上几乎看不见
+
+5 个色槽本身就是用户选的颜色，标签直接写在色块上。用固定的 `--on-accent`（由最深色派生，本身很深）在第 4、5 个槽位（两个深中性色）上就是「深字压深底」，目视几乎不可读。
+
+新增 `readableOn(background, candidates)`：从候选里挑对比度最高的那个，**候选优先用现有 token**（`--on-accent` / `--canvas`），**全都不达 4.5:1 时才退到纯白/纯黑端点**。白与黑不参与配色决策，只作为「保证可读」的灰度端点，与 D-22 第 4 节同一口径。
+
+#### 5.3 滑块偶发失效（见 4.3）
+
+### 6. 极端取值下的加固：方向自适应 + 夜间亮度上限
+
+配色实验室允许用户把**最深那位拉亮**，这在 D-22 的固定配色下不存在。压测（`light`/`night` × p5 亮度 5/30/55/70/90，共 10 组 × 7 项）一上来就是 **47/70**，暴露两个结构性缺口：
+
+#### 6.1 `ensureContrast` 的 `direction` 是写死的
+
+原来日间一律 `'darker'`、夜间一律 `'lighter'`。这在固定配色下永远成立，但 p5 拉亮后夜间正文往白里混会撞天花板 —— 实测夜间 p5 亮度 70% 时正文只有 **4.18:1**。
+
+改为 `ensureContrastEither(color, against, target, preferred)`：先试首选方向，不达标就反向再试，两边都比一遍取更优。
+
+**为什么这不会破坏等价性**：固定配色下首选方向永远先命中，`if (refs.every(...)) return direct` 提前返回，结果与 `ensureContrast` 逐字节相同。384/384 仍然全绿就是证据。
+
+#### 6.2 夜间画布与表面在 p5 被拉亮后会停在中间调
+
+7:1 要求背景相对亮度 ≤ **0.045**，中间调画布上浅色正文数学上做不到。加 `ensureMaxLuminance(color, 0.16)` 把夜间 `canvas` 与 `surface` 钉在亮度上限：
+
+```ts
+const canvas = ensureMaxLuminance(shade(p5, 0.34), 0.16)
+const surface = ensureMaxLuminance(tint(canvas, 0.08), 0.16)  // surface 也要钉
+```
+
+**surface 为什么也要钉**：它比 canvas 亮 8%，canvas 刚好处在 0.16 时 surface 会超到 0.19，7:1 就保不住（实测 6.01）。
+
+**0.16 这个阈值不是拍的**：6 套预设原本的夜间 canvas 亮度都在 **0.02~0.06**，这条保障对它们**完全不触发**。
+
+**一个必须记住的实现细节**：`ensureMaxLuminance` 在未超限时必须**原值返回、不做 hex 舍入**。第一版我写了 `if (luminance(round(color)) <= max) return round(color)`，结果下游 `surface` / `soft` 都在这个值上继续混色，中间多一道舍入累积出 **1 位色差**，384/384 等价性断言当场挂了 48 项（`#282129 vs #292129`）。
+
+#### 6.3 试过但已回退：把 `--on-accent` 也绑到画布上
+
+我一度把 `onAccent` 也交给 `ensureContrastEither(shade(p5, 0.34), [canvas, surface], AA_TEXT, 'darker')`。**这是错的**：`--on-accent` 的对照背景是**按钮面**，不是画布。p5 被拉亮时它被反转成浅色，导致夜间整套按钮面颜色全变（`--coral` 从 `#ff656c` 变成 `#3d181a`），等价性挂 48 项。已回退，并把理由写进代码注释。
+
+**教训：每个 token 的可读性对象是特定的**，不能因为「它也是文字色」就统一绑到 canvas/surface。
+
+### 7. 修不掉的 5 项，以及为什么不假装修掉
+
+加固后 65/70。剩余 **5 项全部是「夜间 + p5 亮度 ≥55%」的正文/表面 7:1**（实测 5.04~5.12）。这不是 bug：7:1 要求背景相对亮度 ≤0.045，把「最深色」拉亮后画布即使钉到 0.16 上限也做不到。
+
+**处理方式是诚实告知，而不是硬压黑或藏起来**：界面加了一条 `role="status"` 警告，明确写「最深那位变亮了：夜间正文只能到 X:1（目标 7:1）。想恢复 AAA，把第 5 位调回去。」
+
+D-22 本来就把「最深放第 5 位」定为**用户的约束**。实验室的职责是让试色变得容易，不是让用户绕过这条约束还能一切正常。
+
+**顺带确认为真达标的**：夜间 p5 拉亮到 70% 时，页面上每一个按钮（登录 / 开始阅读 / 关于我 / 6 个快捷入口）的实测文字对比度是 **4.50 / 4.50 / 4.53 / 4.51 ×6**，全部 ≥ 4.5。截图里看着偏弱是因为画布变成中间调 `#7d677f`，但按钮本身合规 —— 这类「观感存疑」必须回到实测数，不能凭眼睛判定。
+
+### 8. 不持久化，且界面明说
+
+改动只作用于当前页面，刷新即回到站点默认配色。两条理由：
+
+1. 持久化需要在挂载后读取并套用，会先闪一帧默认配色再跳到自定义配色 —— 首页整页颜色闪一次，代价太高。
+2. 配色属于站点身份（D-22），构建期才是真值。实验室是「试一试」，真要用某个配色，做法是填进 `config/palette.ts` 的 `customColors`。
+
+界面上写明了这一点（「这只是一次试色，刷新页面就回到站点配色」+ 指向 `customColors` 的那行说明），避免用户以为拖完滑块就永久生效。
+
+### 9. 验证
+
+| 项 | 结果 |
+| --- | --- |
+| 拆分等价性（vs `git show 4819bf1`） | **384/384 PASS** |
+| 交互验证（`lab-check.mjs`，36 项） | **36/36 PASS** |
+| 极值压测（10 组 × 7 项） | **65/70 PASS**（余 5 项见第 7 节） |
+| `npm run typecheck` | **0** |
+| 孤立副本 `build` | **0** |
+| 路由类型 | `/` 仍 `○ Static`；`/posts/[slug]`、`/timeline/[id]` 仍 SSG |
+| 首页 First Load JS | 103 → **122 kB**（引入客户端组件与派生层的预期代价） |
+| 控制台错误 | **零 hydration / 运行时错误** |
+
+交互断言覆盖：首屏无覆盖层、实验室位于快捷入口上方（`labTop=519 < quickTop=1192`）、`h1` 与主 CTA 仍在、5 个色槽、拖 p1 改变 `--shell`/`--coral-base` 而 `--canvas` 不变（canvas 由 p2 派生，符合设计）、拖 p2 改变 `--canvas`/`--soft`、亮度连续 5 档产生 5 个不同派生色、切槽位后 `aria-pressed` 唯一、预设「港湾」载入 5 个正确色值、还原回构建期值并移除覆盖层、4 项对比度读数达标（17.87 / 4.65 / 6.61 / 3.11）、夜间 token 切换与夜间下拖滑块、**刷新回默认且无覆盖层**、方向键可改滑块值、滑块命中高度 22px、色槽最小边 58px、390px 无横向溢出且仍是 5 列色槽。
+
+我自己的探针 bug 也记录一下（都不是产品缺陷）：① 断言拖 p1 会改 `--canvas`（canvas 由 p2 派生，本就不该变）；② 点完槽位后在**同一同步块**里拖滑块，React 还没重渲染，改的还是上一个槽位；③ 拿硬编码的旧值而非拖前实测值做比较。
+
+### 10. 保留的设计不变量
+
+- `<h1>`、`siteConfig.bio`、主 CTA（开始阅读 / 关于我）全部保留 —— 换掉的是装饰卡，不是标题与入口。
+- 配色仍然只由 `config/palette.ts` 的 5 个色值决定；实验室是**运行时覆盖层**，不是第二个颜色来源。
+- 组件里依然没有硬编码色值：色槽背景是用户输入或 `--palette-N`，标签色由 `readableOn` 从现有 token 里挑。
+- 滑块样式只用派生 token（`--line` / `--surface` / `--ink`），不引入新色值。
+
+### 11. 未验证范围
+
+- 真实触屏拖动未测（只用 CDP 派发 `input` 事件与方向键验证过值会变）。
+- 屏幕阅读器对 `role="status"` 警告与 `aria-valuetext` 的实际朗读未测。
+- 只在 Chromium（Edge）上验证，未测 Firefox / Safari 的 `::-moz-range-*` 伪元素表现。
+- 极端取值下「观感可接受度」未量化（只断言对比度数值达标）。
+- 未做移动端真实设备的滑块拖动手感评估。
+- 未提供「把当前试色导出成 `customColors` 代码」的按钮（用户需手抄 5 个色值）。

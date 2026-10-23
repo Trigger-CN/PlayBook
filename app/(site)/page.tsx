@@ -2,16 +2,24 @@ import Link from 'next/link'
 import type { CSSProperties } from 'react'
 
 import { ActivityFeed } from '@/components/site/activity-feed'
+import { PaletteLab, type PaletteLabPreset } from '@/components/site/palette-lab'
 import { QuickLinkBar } from '@/components/site/quick-link-bar'
 import { TimelineCard } from '@/components/timeline/timeline-card'
 import { StatBlock } from '@/components/ui/stat-block'
 import { Icon } from '@/components/ui/icon'
 import { ToyButton } from '@/components/ui/toy-button'
 import { ToyCard } from '@/components/ui/toy-card'
+import { PALETTE_IDS, palettes, resolvePaletteColors } from '@/config/palette'
 import { siteConfig } from '@/config/site'
 import { timelineTypeStyles } from '@/config/timeline'
 import { getDataPorts, hasDatabaseUrl } from '@/lib/data'
 
+/** 配色实验室的预设列表（构建期从 `config/palette.ts` 展开，不在客户端重复色值）。 */
+const paletteLabPresets: PaletteLabPreset[] = PALETTE_IDS.map((id) => ({
+  id,
+  name: palettes[id].name,
+  colors: palettes[id].colors,
+}))
 const recentCardBases = ['coral', 'mint', 'sky'] as const
 
 /** 首页展示最近 5 条时间轴节点（路线图 Phase 3）。 */
@@ -45,13 +53,16 @@ export default async function HomePage() {
 
   return (
     <>
-      <section className="grid gap-12 pb-14 pt-8 lg:grid-cols-[1.08fr_0.92fr] lg:items-stretch">
-        <div>
+      {/* 决策 D-23：hero 从「静态 NOW PLAYING 装饰卡」换成配色实验室。
+          h1 与主 CTA 必须保留（SEO 与可达性），但它们退回为紧凑的标题行，
+          可玩的部分交给 PaletteLab 占满整幅宽度。 */}
+      <section className="pb-14 pt-8">
+        <div className="max-w-[660px]">
           <span
             className="inline-flex items-center gap-2 rounded-full px-3 py-[7px] text-xs font-extrabold"
             style={{ background: 'var(--cream)', color: 'var(--on-accent)' }}
           >
-            PERSONAL WEB / PLAYBOOK
+            PALETTE LAB / PLAYBOOK
           </span>
           <h1 className="mt-5 font-display text-[clamp(30px,5.4vw,54px)] leading-[1.08]">
             把每一次更新，
@@ -71,30 +82,8 @@ export default async function HomePage() {
           </div>
         </div>
 
-        <div
-          aria-hidden="true"
-          className="relative grid min-h-[290px] place-items-center overflow-hidden rounded-[34px] lg:min-h-[360px]"
-          style={{ background: 'var(--shell)' }}
-        >
-          <div
-            className="relative z-10 w-[min(310px,78%)] rotate-[4deg] rounded-[30px] p-6"
-            style={{ background: 'var(--surface)', boxShadow: 'var(--shadow)' }}
-          >
-            <div className="mb-5 flex items-center justify-between text-xs font-extrabold">
-              <span>NOW PLAYING</span>
-              <span className="flex gap-[7px]">
-                <i className="block h-[9px] w-[9px] rounded-full bg-[var(--coral)]" />
-                <i className="block h-[9px] w-[9px] rounded-full bg-[var(--cream)]" />
-                <i className="block h-[9px] w-[9px] rounded-full bg-[var(--mint)]" />
-              </span>
-            </div>
-            <div
-              className="grid min-h-[118px] place-items-center rounded-[19px] text-[44px] font-black"
-              style={{ background: 'var(--cream)', color: 'var(--on-accent)' }}
-            >
-              2026
-            </div>
-          </div>
+        <div className="mt-9">
+          <PaletteLab initialColors={resolvePaletteColors()} presets={paletteLabPresets} />
         </div>
       </section>
 
