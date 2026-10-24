@@ -62,6 +62,12 @@ export default async function HomePage() {
       <section className="pb-14 pt-8">
         <h1 className="visually-hidden">把每一次更新，做成可以按下的故事。</h1>
         <TouchPanel bio={siteConfig.bio} />
+        {/* 决策 D-25：触感体验面板是**追加**，不是替代 —— 配色实验室必须
+            与它共存。D-24 把两者做成互斥是错的，两者关心的是不同的东西：
+            触感面板演示控件的物理手感，配色实验室演示 5 个源色如何派生全站。 */}
+        <div className="mt-9">
+          <PaletteLab initialColors={resolvePaletteColors()} presets={paletteLabPresets} />
+        </div>
       </section>
 
       <section aria-labelledby="quick-title">
