@@ -3,26 +3,17 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 
 import { Icon } from '@/components/ui/icon'
-import { THEME_COOKIE, type Theme } from '@/lib/theme-shared'
-
-function readThemeFromDom(): Theme {
-  if (typeof document === 'undefined') return 'light'
-  return document.documentElement.dataset.theme === 'night' ? 'night' : 'light'
-}
-
-function subscribe(onChange: () => void) {
-  const observer = new MutationObserver(onChange)
-  observer.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['data-theme'],
-  })
-  return () => observer.disconnect()
-}
+import { readThemeFromDom, subscribeTheme, toggleTheme } from '@/lib/theme-dom'
+import type { Theme } from '@/lib/theme-shared'
 
 /**
  * 卡通主题开关（技术架构 12.2 / 决策 D-08）。
  * 根布局保持静态输出 data-theme="light"，由 head 内联脚本在首屏前按 cookie 校正；
- * 这里只负责切换 DOM 上的 data-theme 并回写 cookie，两者共用同一个 cookie 名。
+ * 这里只负责切换 DOM 上的 data-theme 并回写 cookie。
+ *
+ * 读写逻辑已抽到 `lib/theme-dom.ts`（D-24）—— 首页触感面板的主题滑块是第二个
+ * 改主题的地方，两处必须共用同一套 cookie 名与写入顺序，否则会出现
+ * 「页头切了、面板没跟上」的漂移。
  *
  * 几何（决策 D-21）：滑块与两个图标共用同一套 27×27 的「停靠位」，
  * 两个停靠位分别贴住按钮左右各 6px 内边距，滑块在两者之间平移 35px（= 74 - 6 - 6 - 27）。
@@ -33,7 +24,7 @@ function subscribe(onChange: () => void) {
  */
 export function ThemeToggle() {
   const theme = useSyncExternalStore<Theme>(
-    subscribe,
+    subscribeTheme,
     readThemeFromDom,
     () => 'light' as Theme,
   )
@@ -44,9 +35,7 @@ export function ThemeToggle() {
   const isNight = theme === 'night'
 
   const toggle = useCallback(() => {
-    const next: Theme = readThemeFromDom() === 'night' ? 'light' : 'night'
-    document.documentElement.dataset.theme = next
-    document.cookie = `${THEME_COOKIE}=${next}; path=/; max-age=31536000; samesite=lax`
+    toggleTheme()
   }, [])
 
   return (

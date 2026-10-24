@@ -4,6 +4,7 @@ import type { CSSProperties } from 'react'
 import { ActivityFeed } from '@/components/site/activity-feed'
 import { PaletteLab, type PaletteLabPreset } from '@/components/site/palette-lab'
 import { QuickLinkBar } from '@/components/site/quick-link-bar'
+import { TouchPanel } from '@/components/site/touch-panel'
 import { TimelineCard } from '@/components/timeline/timeline-card'
 import { StatBlock } from '@/components/ui/stat-block'
 import { Icon } from '@/components/ui/icon'
@@ -53,38 +54,14 @@ export default async function HomePage() {
 
   return (
     <>
-      {/* 决策 D-23：hero 从「静态 NOW PLAYING 装饰卡」换成配色实验室。
-          h1 与主 CTA 必须保留（SEO 与可达性），但它们退回为紧凑的标题行，
-          可玩的部分交给 PaletteLab 占满整幅宽度。 */}
+      {/* 决策 D-24：hero 从「标题 + 徽标 + 主 CTA」换成触感体验面板。
+          标题文案必须保留（SEO 与可达性），所以 <h1> 改为 visually-hidden ——
+          它在 DOM 里仍是本页唯一的最高级标题，只是不再占据视觉空间。
+          两个主 CTA（开始阅读 / 关于我）搬进面板内部，仍用 ToyButton，
+          因此按压反馈与全站立体按钮完全同源（D-02 不允许复制按钮状态 CSS）。 */}
       <section className="pb-14 pt-8">
-        <div className="max-w-[660px]">
-          <span
-            className="inline-flex items-center gap-2 rounded-full px-3 py-[7px] text-xs font-extrabold"
-            style={{ background: 'var(--cream)', color: 'var(--on-accent)' }}
-          >
-            PALETTE LAB / PLAYBOOK
-          </span>
-          <h1 className="mt-5 font-display text-[clamp(30px,5.4vw,54px)] leading-[1.08]">
-            把每一次更新，
-            <br />
-            做成可以按下的故事。
-          </h1>
-          <p className="mt-4 max-w-[570px] text-[17px] leading-relaxed text-[var(--muted)]">
-            {siteConfig.bio}
-          </p>
-          <div className="mt-7 flex flex-wrap gap-4">
-            <ToyButton href="/posts">
-              开始阅读 <Icon name="arrow_forward" size={17} />
-            </ToyButton>
-            <ToyButton href="/about" variant="pink">
-              关于我 <Icon name="auto_awesome" size={17} />
-            </ToyButton>
-          </div>
-        </div>
-
-        <div className="mt-9">
-          <PaletteLab initialColors={resolvePaletteColors()} presets={paletteLabPresets} />
-        </div>
+        <h1 className="visually-hidden">把每一次更新，做成可以按下的故事。</h1>
+        <TouchPanel bio={siteConfig.bio} />
       </section>
 
       <section aria-labelledby="quick-title">
