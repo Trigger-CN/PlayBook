@@ -67,6 +67,21 @@ const THRESHOLD_MAX = 0.95
  */
 const HYSTERESIS = 0.6
 
+/**
+ * 末端软着陆：把「突破所需行程」按到轨道端点的剩余行程比例封顶。
+ *
+ * 【为什么必须有这一条】回差是按「档」计的固定量，而靠近轨道两端时剩余行程不足：
+ * 从第 2 档退回第 1 档，指针最多只能积累 1.0 档的位移，而
+ * `threshold + HYSTERESIS` 的最小值是 0.5 + 0.6 = 1.1 档 ——
+ * 判据在数学上永远不成立，端档就成了「拖不到的死档」。
+ * 用户报的「滑块和旋钮无法从第二个刻度拖到第一个刻度」就是这个。
+ *
+ * 中段 room 远大于 need，此封顶不生效；只在最后一档把要求放宽到剩余行程的 80%，
+ * 既保证端档可达，又让指针不必精确压到轨道端点（差 1px 也不至于拖不动）。
+ * 0.8 仍大于 0.5 档界，所以突破点依旧落在档界之后，不会重新引入中点闪烁。
+ */
+const END_ROOM_RATIO = 0.8
+
 const clampIndex = (index: number, detents: number) =>
   index < 0 ? 0 : index > detents - 1 ? detents - 1 : index
 
@@ -109,9 +124,22 @@ const KNOB_SIZE = 300
 const KNOB_DISC = 224
 /** cap 与 base 的错开量。base 不随转动。 */
 const KNOB_DEPTH = 14
-/** 刻度环半径区间：内端被 cap 压住，外端露出。 */
-const KNOB_TICK_INNER = 88
-const KNOB_TICK_OUTER = 128
+/**
+ * 刻度环半径区间。**必须完全落在侧面圆（base）之外**：
+ * base 半径 = KNOB_DISC/2 = 112，刻度内端取 116，留 4px 可见间隙（严格在外）。
+ * （旧值 88 让刻度入侵到侧面圆内部，看起来像刻在侧面上，立体感就没了。）
+ *
+ * 注意：刻度的圆心是 **base 的圆心**（translateY +7），不是 KNOB_SIZE 容器的几何中心。
+ * 探针量半径时必须以 [data-knob-ticks] 的矩形中心为原点，否则会算出小 7px 的伪半径。
+ *
+ * 外端 144 仍在 KNOB_SIZE/2 = 150 之内。
+ * 顶面圆（cap）半径同样 112、但上移 7px，所以沿正上方它能覆到半径
+ * 112 + 14 = 126：顶部刻度（116..126，共 10px / 28px）被盖住 ——
+ * 这就是「顶面遮挡一部分刻度」的立体感来源。侧向只覆到 sqrt(112²-14²) ≈ 111.1，
+ * 刻度完全露出。两端等大且只错开 14px 时，遮挡量在几何上就这么多，不可能更多。
+ */
+const KNOB_TICK_INNER = 116
+const KNOB_TICK_OUTER = 144
 
 /** 旋钮刻度在改颗粒度时的淡出 → 换数量 → 淡入时长。 */
 const TICK_FADE_MS = 110
@@ -214,8 +242,12 @@ function DetentSlider({
       const total = curCreep + (targetRaw - released)
 
       // 回退比推进需要多拖一段：这就是回差，消除中点上必然出现的来回翻转。
-      const need = total > 0 ? threshold : threshold + HYSTERESIS
-
+      const wanted = total > 0 ? threshold : threshold + HYSTERESIS
+      // 末端软着陆：这一方向剩余可拖行程（档）。
+      // 例：5 档滑块停在 1 档向下拖，room = 1，而 wanted 最小是 1.1 ——
+      // 不封顶就永远拖不到 0 档（用户报的「从第二格拖不到第一格」）。
+      const room = total > 0 ? detents - 1 - curAnchor : curAnchor
+      const need = Math.min(wanted, room * END_ROOM_RATIO)
       if (Math.abs(total) >= need) {
         // 目标档位：对到最近的整数档。快速拖动可一次跨多档。
         const next = clampIndex(Math.round(targetRaw), detents)
@@ -524,7 +556,11 @@ function DetentKnob({
     (targetRaw: number, curAnchor: number, curCreep: number) => {
       const released = curAnchor + curCreep
       const total = curCreep + (targetRaw - released)
-      const need = total > 0 ? knobThreshold : knobThreshold + knobHysteresis
+      const wanted = total > 0 ? knobThreshold : knobThreshold + knobHysteresis
+      // 与滑块同一套末端软着陆：旋钮停在第 2 档反向转时 room = 1，
+      // 而 wanted 最小是 1.1 档，不封顶就转不回第 1 档。
+      const room = total > 0 ? detents - 1 - curAnchor : curAnchor
+      const need = Math.min(wanted, room * END_ROOM_RATIO)
       if (Math.abs(total) >= need) {
         const next = clampIndex(Math.round(targetRaw), detents)
         if (next !== curAnchor) return { anchor: next, creep: 0 }
