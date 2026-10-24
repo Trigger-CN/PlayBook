@@ -11,7 +11,6 @@ import { Icon } from '@/components/ui/icon'
 import { ToyButton } from '@/components/ui/toy-button'
 import { ToyCard } from '@/components/ui/toy-card'
 import { PALETTE_IDS, palettes, resolvePaletteColors } from '@/config/palette'
-import { siteConfig } from '@/config/site'
 import { timelineTypeStyles } from '@/config/timeline'
 import { getDataPorts, hasDatabaseUrl } from '@/lib/data'
 
@@ -61,7 +60,7 @@ export default async function HomePage() {
           因此按压反馈与全站立体按钮完全同源（D-02 不允许复制按钮状态 CSS）。 */}
       <section className="pb-14 pt-8">
         <h1 className="visually-hidden">把每一次更新，做成可以按下的故事。</h1>
-        <TouchPanel bio={siteConfig.bio} />
+        <TouchPanel />
         {/* 决策 D-25：触感体验面板是**追加**，不是替代 —— 配色实验室必须
             与它共存。D-24 把两者做成互斥是错的，两者关心的是不同的东西：
             触感面板演示控件的物理手感，配色实验室演示 5 个源色如何派生全站。 */}

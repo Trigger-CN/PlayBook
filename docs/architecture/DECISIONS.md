@@ -2295,3 +2295,317 @@ D-25 把 `THRESHOLD_MIN` 当成纯手感旋钮，从 0.12 到 1.0 随意取值�
 顺带记下两个探针 bug（均非产品缺陷）：长拉用例里 `yOf` 是「raw 越大 y 越小」，我写成
 `yOf(a) + 正向增量` 变成了向下拖；旋钮用例监听 `data-angle` 而那是含 `creep` 的**视觉**角度、
 每帧都该变，要验闪烁必须看**离散档位** `data-value`。
+
+---
+
+## D-26 触感面板视觉重做：纯色色块 + 立体侧面 + 布局重排
+
+### 1. 用户提的四条，逐条对应
+
+用户原话（四条并列，必须全部满足）：
+
+> 滑块、旋钮的风格要和按钮统一，都是纯色色块构成，尽量不要使用线条勾勒
+>
+> 滑块分为滑槽和滑块两部分，滑块本身和和按钮一样拥有下层侧面阴影，但是随着滑块有上划到下，侧面阴影的位置也有变化，例如滑块在上侧时漏出的侧面在下方，滑块在下侧时漏出的侧面在上方，正中间位置则不会露出侧面，滑槽周围也要显示刻度
+>
+> 旋钮和按钮一样拥有下层侧面阴影，整体有两个大小一致但是位置上下错开的圆构成，但是侧面阴影不跟随转动，再引入旋钮刻度显示围绕在侧面阴影圆周围，旋钮顶部圆可以遮挡一部分刻度，来深化立体效果，刻度显示要跟随实际颗粒度变化，实际颗粒度变化是刻度使用快读淡入淡出变化。
+>
+> 触感面板中的布局还需要改进：整体分为左右两大块，左边是标题两个按钮，将简介删除，仅保留标题，两个按钮中开始阅读更大，右侧是两个滑块和旋钮，两个滑块和旋钮应该在面板中垂直居中，面板中的控件的分布更均匀，左右两边不要有过大的空隙，尽量上下左右的空隙一致
+
+| # | 要求 | 实现位置 |
+| --- | --- | --- |
+| 1 | 纯色色块、不用线条 | 全控件零 `border`；体积只由亮色 cap 压在暗色 base 上形成 |
+| 2 | 滑块 = 滑槽 + 滑块；侧面随位置反向露出；滑槽周围有刻度 | `wallOffset = THUMB_DEPTH * (2 * frac - 1)`；每档左右各一条实色刻度 |
+| 3 | 旋钮 = 两个等大错开圆；侧面不随转动；刻度环被顶部圆压住；刻度跟随颗粒度并淡入淡出 | base/cap 各 224px 错开 14px；base 不含 `rotate`；刻度环夹在两者之间；`tickDetents` + `tickVisible` |
+| 4 | 左右两大块；删简介；开始阅读更大；右侧整组垂直居中；空隙均匀 | 左栏 `lg:w-[460px]` 只有标题 + 两按钮；右组 `items-center`；`lg:justify-center lg:gap-14` |
+
+隐含硬约束：**手感逻辑不得退化**。`THRESHOLD_MIN = 0.5` / `THRESHOLD_MAX = 0.95` / `HYSTERESIS = 0.6`
+与 `anchorRef` + `creepRef` 的拖动期真值方案（D-25 §12）**逐字保留**，本轮只改视觉层。
+
+### 2. 为什么必须去掉描边（这是语言问题，不是审美问题）
+
+D-25 用 `border: 2px solid var(--ink)` 勾控件轮廓，那是「线稿」语言。而 `ToyButton`（D-02）的
+体积**从来不靠描边**：
+
+```
+外层 .toy-button      背景 = --base（暗）
+内层 .toy-button__top 背景 = --cap（亮），translateY(-depth)
+```
+
+只靠「亮色面压在暗色面上」就形成了厚度。全站按钮**一个 border 都没有**（唯一例外是
+`f309b47` 事故后补的注释与结构，仍然不是描边）。
+
+于是结论是刚性的：**控件要与按钮统一，就必须同样只用实色面 + 侧面，不能有描边。**
+
+颜色也全部走语义 token，不出现十六进制（D-22 的约束同样适用于本轮）：
+
+| 部位 | token |
+| --- | --- |
+| 滑槽 | `var(--line)` |
+| 刻度 | `var(--ink)`（激活 0.75 / 未激活 0.28 透明度） |
+| 滑块 cap / 旋钮 cap | `var(--cream)` |
+| 滑块侧面 / 旋钮侧面 | `var(--coral-base)` |
+
+### 3. 滑块：侧面方向随位置翻转
+
+D-25 的拇指是「一层带描边的圆角块」。现在拆成两层实色块：
+
+```tsx
+<span data-thumb className="pointer-events-none absolute left-1/2"
+  style={{ top: thumbTop, width: THUMB_W, height: THUMB_H, transform: 'translate(-50%, -50%)' }}>
+  {/* 下层：侧面。位置随 frac 变化 */}
+  <span data-thumb-wall className="absolute inset-0 rounded-[13px]"
+    style={{ background: 'var(--coral-base)', transform: `translateY(${wallOffset}px)`, ... }} />
+  {/* 上层：cap */}
+  <span data-thumb-cap className="absolute inset-0 grid place-items-center rounded-[13px]"
+    style={{ background: 'var(--cream)' }}>…</span>
+</span>
+```
+
+偏移量：
+
+```ts
+const frac = detents > 1 ? visual / (detents - 1) : 1
+const wallOffset = THUMB_DEPTH * (2 * frac - 1)   // THUMB_DEPTH = 9
+```
+
+| `frac` | `wallOffset` | 视觉效果 |
+| --- | --- | --- |
+| `1`（最上档） | `+9` | base 下移 → **侧面露在下方** |
+| `0.5`（正中） | `0` | 两层完全重合 → **不露侧面** |
+| `0`（最下档） | `-9` | base 上移 → **侧面露在上方** |
+
+**为什么用 `2*frac - 1` 而不是别的曲线**：用户要的是「上侧露下、下侧露上、正中不露」，这是
+一个**关于中点奇对称、在中点过零**的线性映射，`2*frac - 1` 是最简形式。任何非线性曲线
+（如 `sign(d)*|d|^p`）都会让两端露出量相同但近中点处变化过快，反而失去「正中刚好贴合」的观感。
+
+位移方向与 `visual` 关系由 `dragging` 控制 `transition`：
+
+```ts
+transition: dragging ? 'none' : 'transform 220ms cubic-bezier(0.22, 1.4, 0.4, 1)'
+```
+
+拖动中关掉过渡的理由与 D-25 §4 相同：磁滞本身就是一条位移曲线，再叠 CSS 补间等于双重延迟。
+
+### 4. 滑槽的刻度
+
+滑槽是 20px 宽的圆角纯色实块（`var(--line)`），**不是轨道 + 描边**。刻度不画在槽上，而是
+画在槽**两侧**：每档一对 `10px × 4px` 圆角实色短条，左条 `left: 20`、右条 `left: 58`，
+激活档透明度 `0.75`、其余 `0.28`。5 档滑块因此渲染 **10 条**（左 5 右 5）。
+
+刻度条的 `top` 与拇指共用同一套插值：
+
+```ts
+`calc(${SLIDER_INSET}px + (100% - ${SLIDER_INSET * 2}px) * ${1 - markFrac})`
+```
+
+**刻度必须用实色条而不是 `border` 或 `background-image` 渐变**：前者会引入描边语言，后者无法
+逐档高亮激活态。
+
+### 5. 旋钮：两个等大圆 + 被压住的刻度环
+
+```
+DOM 顺序决定遮挡（同层后者在上）：
+  ① base 圆   --coral-base, 224px, translateY(+7px),  不含 rotate
+  ② 刻度环    translateY(+7px)，圆心对齐 base
+  ③ cap 圆    --cream,       224px, translateY(-7px), rotate(visualDeg)
+```
+
+| 常量 | 值 | 作用 |
+| --- | --- | --- |
+| `KNOB_SIZE` | 300 | 命中区 |
+| `KNOB_DISC` | 224 | **base 与 cap 都用这个尺寸** |
+| `KNOB_DEPTH` | 14 | base `+7` / cap `-7`，两者错开 14px |
+| `KNOB_TICK_INNER` | 88 | 刻度内端半径 |
+| `KNOB_TICK_OUTER` | 128 | 刻度外端半径 |
+| `TICK_FADE_MS` | 110 | 淡出 → 换数量 → 淡入 |
+
+**侧面不跟随转动是硬要求，实现方式是一句话：base 圆的 `transform` 里根本没有 `rotate`。**
+
+```tsx
+// ① 侧面：只有位移，没有 rotate
+transform: `translate(-50%, -50%) translateY(${KNOB_DEPTH / 2}px)`
+// ③ 顶面：位移 + rotate
+transform: `translate(-50%, -50%) translateY(-${KNOB_DEPTH / 2}px) rotate(${visualDeg}deg)`
+```
+
+刻度内端 88 < cap 半径 112，所以 cap 会**压住刻度环内侧一截**（实测内端被压到 81.1，外端 133.1
+露出）—— 这就是立体感的来源，也是用户明确要的「顶部圆遮挡一部分刻度」。
+
+刻度条 `height = 128 - 88 = 40`，宽度按档数取 `4`（>20 档）/ `5`（>10 档）/ `7`，
+`transform: rotate(${deg}deg) translateY(-${dist}px)`。
+
+### 6. 刻度数量变化必须淡入淡出（不能直接换）
+
+**直接渲染 `detents` 会看到一圈刻度「瞬间重排」**：20 档变 36 档时，40 条 DOM 同时换角度，
+视觉上是一次跳变。改为两级 state：
+
+```tsx
+const [tickDetents, setTickDetents] = useState(detents)
+const [tickVisible, setTickVisible] = useState(true)
+
+useEffect(() => {
+  if (detents === tickDetents) return
+  setTickVisible(false)                       // 先淡出
+  const timer = setTimeout(() => {
+    setTickDetents(detents)                   // 不可见时换数量
+    setTickVisible(true)                      // 再淡入
+  }, TICK_FADE_MS)
+  return () => clearTimeout(timer)
+}, [detents, tickDetents])
+```
+
+刻度环的 `opacity: tickVisible ? 1 : 0` + `transition: opacity 110ms ease`。
+**110ms 是「快」的量化**：低于 ~90ms 浏览器几乎不采样中间帧，高于 ~160ms 就会感觉控件在「发呆」。
+两个 `data-*` 暴露内部状态供探针断言：`data-tick-detents`、`data-tick-visible`。
+
+### 7. 布局：左右两块、删简介、主按钮更大
+
+```tsx
+<section className="relative overflow-hidden rounded-[34px] p-4 sm:p-6 lg:p-8" style={{ background: 'var(--shell)' }}>
+  <div className="rounded-[24px] p-5 sm:p-6 lg:p-8" style={{ background: 'var(--surface)' }}>
+    <div className="flex flex-col gap-7 lg:flex-row lg:items-center lg:justify-center lg:gap-14">
+
+      {/* 左：只有标题 + 两个按钮 */}
+      <div className="order-1 flex w-full flex-col gap-5 lg:w-[460px] lg:shrink-0">
+        <h2 id="touch-panel-title" className="flex items-center gap-2 font-display text-2xl">…</h2>
+        <ToyButton href="/posts" size="large" className="w-full"
+          topClassName="h-[112px] justify-between px-7 text-[19px]">开始阅读 …</ToyButton>
+        <ToyButton href="/about" size="large" variant="pink" className="w-full"
+          topClassName="h-[80px] justify-between px-7">关于我 …</ToyButton>
+      </div>
+
+      {/* 右：两个滑块 + 旋钮，整组垂直居中 */}
+      <div className="order-2 flex items-center justify-center gap-6 lg:shrink-0 lg:gap-7">
+        <DetentSlider detents={5} … />
+        <DetentSlider detents={2} … />
+        <DetentKnob … />
+      </div>
+    </div>
+  </div>
+</section>
+```
+
+**删掉的三样东西**：`bio` 段落、说明段落、「旋钮暂未绑定功能」徽标。左侧**只剩标题 + 两个按钮**。
+`TouchPanel` 因此**不再接收任何 props**（`siteConfig` 的 import 也从 `page.tsx` 一并删除）。
+
+**不再用 `justify-between` 或 grid `[minmax(0,1fr)_auto_auto]`**：前者把两块顶到两端、中间挖出大洞；
+后者把按钮组拉到极左、旋钮推到极右（D-25 §2 已否决过）。现在用 `justify-center` + 固定左栏宽度
+`460px`，两侧余量由 `justify-center` 自动均分。
+
+### 8. 布局实测数值（CDP，1440×1600，日间态）
+
+| 实测项 | 数值 | 说明 |
+| --- | --- | --- |
+| 左右 gutter | `34.0 / 34.0` | **完全相等**，无左右大空隙 |
+| 上下 gutter | `32.0 / 52.3` | 同量级 |
+| 两块之间 gap | `56.0` | 无大洞 |
+| 左块与右组垂直中心偏差 | `13.3px` | 右组已居中 |
+| 两个按钮高度 | `123 / 91` | 主按钮（开始阅读）明显更大 |
+| 旋钮两圆 | 各 `224 × 224` | **等大** |
+| 两圆垂直错开 | `14.00` | `KNOB_DEPTH` |
+| 刻度内端 vs cap 半径 | `81.1 < 112.0` | 被压住 |
+| 刻度外端 vs cap 半径 | `133.1 > 112.0` | 外侧外露 |
+| 卡内容宽 | `1116` | 1440 − 页边 − 两层 padding |
+
+移动端 390px：`scrollW 391 / innerW 391`（无横向溢出），按钮 `290/290`、滑块 `88/88`、旋钮 `300`，
+全部 ≥ 44px 触控目标。
+
+### 9. 探针教训（两条，本轮新增）
+
+**① `getBoundingClientRect()` 对带 `rotate()` 的元素返回的是外接包围盒。**
+
+224px 的圆转 45° 后，rect 读到 **315.7 × 315.7**（= `224 × √2 ≈ 316.8`）。
+它不仅让「两圆等大」这条断言假失败，还把 `capR` 从真实的 112 放大到 157.9，
+连带让「刻度外露」也假失败。
+
+```js
+// 错
+const cb = cap.getBoundingClientRect()   // 旋转元素 → 外接包围盒
+// 对
+const w = cap.offsetWidth, h = cap.offsetHeight   // 布局尺寸，不受 transform 影响
+```
+
+如果确实需要旋转后的**位置**，可以用「包围盒中心 == 旋转中心」反推：
+
+```js
+const realTop = rect.top + rect.height / 2 - h / 2
+```
+
+**这是一条通用规则：量尺寸用 `offsetWidth/offsetHeight`，量位置才用 rect，且旋转元素的位置要经中心换算。**
+
+**② 回差使「从当前位置直线拖到中点」不是有效的中点测试。**
+
+`HYSTERESIS = 0.6` 让「反向退档」比「正向推进」多需要 0.6 档，也就是从上方拖下来时每档要
+多拖 `threshold + HYSTERESIS ≈ 1.325` 档。所以 `dragTo((detents-1)/2)` 从当前档直线拖到中点，
+**根本到不了中点** —— 本轮实测停在 `value = 3`（中点应为 2），`wall = 3.87`，于是假失败。
+
+修法不是放宽断言，而是**让测试走一条物理上可行的路径**：
+
+```js
+await dragTo(0)                    // 先到底（正向推进，每档只需 0.725 档）
+const atMid = await dragTo((DETENTS - 1) / 2)   // 再正向拖两档到中点
+```
+
+实测 `wall = 0`、`value = 2`、`gap = 0.00` —— 正中确实完全不露侧面。
+
+**教训**：断言「A 状态下量值应为 X」时，必须先确认**能稳定到达 A 状态**。这与 §D-25 的教训同源：
+测试路径本身也是被测量对象的一部分。
+
+### 10. 验证结果（31/31 PASS）
+
+`.me/tmp/look2.mjs`（CDP + 无头 Edge，1440×1600），31 条断言全过。关键证据：
+
+| 断言 | 实测 |
+| --- | --- |
+| 控件内无任何描边 | `none` |
+| 拇指两层实色、无描边 | `wall=rgb(107,42,45)` / `cap=rgb(228,249,241)` / `borders=0px/0px` |
+| 每档一对刻度、左右各一 | `bars=10 left=5 right=5 detents=5` |
+| 顶部侧面露在下方 | `wall=+9`，`wallTop−capTop=+9.00` |
+| 底部侧面露在上方 | `wall=−5.13`，`wallTop−capTop=−5.13` |
+| 方向翻转 | `top=9 / bottom=−5.13` |
+| **正中不露侧面** | `wall=0 value=2 gap=0.00` |
+| 旋钮两圆等大 | `base=224×224 cap=224×224` |
+| 两圆垂直错开 | `deltaTop=14.00` |
+| base/cap 实色无描边 | `borders=0px/0px` |
+| 刻度环内端被压住 | `tickInner=81.1 < capR=112.0` |
+| 刻度环外侧外露 | `tickOuter=133.1 > 112.0` |
+| 刻度数 = 档数 | `ticks=20 detents=20` |
+| 刻度切换有 opacity 过渡 | `transition=opacity 0.11s` |
+| **侧面不随转动** | `before = after = matrix(1,0,0,1,-112,-105)` |
+| 顶面随转动 | transform 明显变化 |
+| 旋钮仍能改滑块阈值 | `0.725 → 0.524` |
+| 刻度数跟随颗粒度 | `20 → 36`（渲染 36） |
+| 删 bio 与说明段落 | `paragraphs=0` |
+| 两个按钮、主按钮更高 | `heights=[123, 91]` |
+| 左右 gutter 相等 | `34.0 / 34.0` |
+| 上下 gutter | `32.0 / 52.3` |
+| 右组与左块垂直中心 | delta `13.3px` |
+| 两块间 gap | `56.0` |
+| **阻滞未退化** | 指针 `10.60px` → 拇指 `0.00px` |
+| 中点不闪 | `0 mutations, flips=0` |
+| 390px 无溢出 | `scrollW 391 / innerW 391` |
+| 运行时错误 | 零 |
+
+### 11. 未验证范围（诚实列出）
+
+- **真实触屏未测**：全部用 `Input.dispatchMouseEvent`，`pointerType: touch` 与 `touch-action: none`
+  的实际拦截未验。
+- **屏幕阅读器未测**：`aria-valuetext` 的朗读顺序未验。
+- **风格「够不够统一」是主观判断**：我只提供可测的客观性质（零描边、侧面三段翻转、两圆等大、
+  刻度被压、刻度跟随颗粒度、空隙数值相等）。
+- 只在 Chromium（Edge）验证，未测 Firefox / Safari。
+- **可微调常量**（如果不满意观感，调这几个即可，都在 `touch-panel.tsx` 顶部）：
+  `THUMB_DEPTH = 9`（滑块侧面最大深度）、`KNOB_DEPTH = 14`（旋钮两圆错开量）、
+  `KNOB_TICK_INNER/OUTER = 88/128`（刻度内外端）、`TICK_FADE_MS = 110`（刻度淡入淡出）。
+
+### 12. 本轮新增的可测锚点
+
+`data-thumb`、`data-thumb-wall`、`data-thumb-cap`、`data-knob-base`、`data-knob-cap`、
+`data-knob-ticks`、`data-tick-detents`、`data-tick-visible`、`data-wall`；
+沿用 D-25 的 `data-detents`、`data-value`、`data-visual`、`data-threshold`、`data-dragging`、
+`data-angle`、`data-knob-readout`。
+
+**探针必须用这些锚点，不得靠 className 或 computed-style 猜测。** 加锚点时注意：`File.Edit`
+的行范围必须覆盖完整语法单元（`style={{…}}` 与紧接的 `/>` 是一个整体），否则会吞掉 JSX 收尾 ——
+本轮因此连续触发 `TS1005` / `TS1003` / `TS17002` / `TS1381` / `TS1382`。

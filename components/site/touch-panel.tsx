@@ -8,7 +8,6 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
@@ -33,47 +32,38 @@ import type { Theme } from '@/lib/theme-shared'
  *   4. 换档后累积位移清零，重新从阻滞状态开始
  *
  * 实现上需要两个状态，不能只靠纯函数：
+ *   anchor —— 上一次突破时所在/已确认的整数档位
+ *   creep  —— 这一次已经累积的「未释放」跟随量（档位单位，带符号）
  *
- *   anchor   —— 上一次突破时指针所在的档位坐标
- *   armed    —— 这一次已经累积了多少「未释放」的档位距离
- *
- * 每次 pointermove：
- *   raw    = 指针在轨道上的连续位置（0..n-1）
- *   delta  = raw - anchor          （相对上次突破点的位移）
- *   if |delta| >= threshold:       突破！
- *      anchor = raw 向前跨过整数档：直接对到最近档心，并把超出部分清零
- *      armed  = 0
- *   else:
- *      armed = delta * CREEP_RATIO  （只跟这一小部分 = 阻滞感）
- *
- * 视觉位置 = anchor 的整档 + armed。
+ * 视觉位置 = anchor + creep。
  *
  * 为什么 CREEP_RATIO 取 0.14 这种很小的值：阻滞感来自「拇指几乎不动」这个
  * 事实。若取 0.5，看起来就像普通滑块只是打了个折，不像被卡住。
- *
- * 【阈值由旋钮控制】threshold 是 0.12..0.62 档的连续值，越小的档位（旋钮
- * 转得越“松”）阈值越大，拖起来越费劲；反之越容易拨动。
  * ============================================================== */
 
 /** 阻滞期间拇指跟随指针的比例。越小越“卡”。 */
 const CREEP_RATIO = 0.14
 
+/**
+ * 阈值两端（单位是「档」）：从**当前档心**算起，指针必须拖过这么远才突破。
+ *
+ * 【下限必须是 0.5，这是硬约束不是调参】
+ * 0.5 档正好是「两个档位的中点」，也就是档界所在的几何位置。
+ * 阈值小于 0.5 时，指针还停在两档之间（没越过分界线）就已经满足突破条件；
+ * 突破后指针仍未越界，下一次 pointermove 又满足条件 —— 于是档位在两档之间
+ * 反复翻转，屏幕上就是「滑块在闪」。
+ *
+ * 0.5 = 一过中点就弹（最轻）；0.95 = 几乎拖到下一档才弹（最费力）。
+ */
 const THRESHOLD_MIN = 0.5
 const THRESHOLD_MAX = 0.95
 
 /**
  * 回差（hysteresis）：退回方向比推进方向多拖这么多档才生效。
  *
- * 【为什么必须有】没有回差时，突破与回退发生在同一个坐标点上。指针恰好停在
- * 那个坐标（例如两档中点）时，操作系统的亚像素抖动就会让判据一帧成立、
- * 下一帧不成立 —— 档位在相邻两档之间反复翻转，即用户看到的「闪」。
- *
- * 加了回差后，推进在 `threshold` 处发生、回退在 `threshold + HYSTERESIS` 处
- * 才发生，两者之间是一条稳定的死带，指针停在那里不会引发任何状态变化。
- *
- * 取 0.6 档：叠加到 0.5..0.95 的上，回退阈值落在 1.1..1.55 档。
- * 意味着「弹过去之后，要往回拖过一整档才会弹回来」——符合物理旋钮的观感，
- * 同时也不至于让人拖不回去。
+ * 没有回差时，突破与回退发生在同一个坐标点上。指针恰好停在那个坐标（例如
+ * 两档中点）时，操作系统的亚像素抖动就会让判据一帧成立、下一帧不成立 ——
+ * 档位在相邻两档之间反复翻转，即用户看到的「闪」。
  */
 const HYSTERESIS = 0.6
 
@@ -91,22 +81,40 @@ const KNOB_SWEEP_DEG = 270
 const KNOB_HALF_DEG = KNOB_SWEEP_DEG / 2
 
 /* ==============================================================
- * 竖直档位滑块的几何（对齐参考图 img/Snipaste_2026-10-24_14-16-54.png）
+ * 视觉体系：纯色色块，不用线条勾勒（与 ToyButton 同源）
  *
- * 参考图里的滑块是「细长导轨 + 宽扁拇指」：导轨明显比拇指窄，而且上下都
- * 超出拇指所在的块体。所以这里不再画一个包住整条的方框，而是：
- *   - 容器只负责命中区与坐标换算（透明，宽 72px 以满足 44px 触控目标）
- *   - 容器里单独画一条 16px 宽的导轨，拇指 64×34 横跨在导轨上
- * 行程 = 容器高度 - 2 * 内边距（拇指中心在容器内缘起止）。
+ * 【为什么去掉描边】D-25 用 `border: 2px solid var(--ink)` 勾出控件轮廓，
+ * 那是「线稿」语言。ToyButton 是靠「亮色 cap 压在暗色 base 上」形成体积的，
+ * 全站按钮没有一个描边。控件要与之统一，就必须同样只用实色面 + 侧面。
+ *
+ * 【滑块的侧面方向随位置翻转】
+ * 滑块在上侧 → 侧壁露在下方；在下侧 → 侧壁露在上方；正中 → 完全重合。
+ * 用 `2 * frac - 1` 把「离中心的归一化位置」映射成 -1..+1，再乘深度即可：
+ *   frac = 1（顶部）→ +depth（base 下移，露在下方）
+ *   frac = 0（底部）→ -depth（base 上移，露在上方）
+ *   frac = 0.5（正中）→ 0（完全重合，不露侧壁）
  * ============================================================== */
-const SLIDER_HEIGHT = 200
-const SLIDER_INSET = 17
-const SLIDER_HIT_WIDTH = 72
-const SLIDER_RAIL_WIDTH = 16
 
-/** 旋钮直径。参考图里旋钮与滑块导轨同高，是整块面板的视觉重心。 */
-const KNOB_SIZE = 200
-const KNOB_DISC = 148
+const SLIDER_HEIGHT = 260
+const SLIDER_INSET = 24
+const SLIDER_HIT_WIDTH = 88
+const SLIDER_RAIL_WIDTH = 20
+const THUMB_W = 80
+const THUMB_H = 40
+/** 滑块侧壁的最大露出深度。 */
+const THUMB_DEPTH = 9
+
+/** 旋钮：两个等大的圆（cap 在上、base 在下）上下错开。 */
+const KNOB_SIZE = 300
+const KNOB_DISC = 224
+/** cap 与 base 的错开量。base 不随转动。 */
+const KNOB_DEPTH = 14
+/** 刻度环半径区间：内端被 cap 压住，外端露出。 */
+const KNOB_TICK_INNER = 88
+const KNOB_TICK_OUTER = 128
+
+/** 旋钮刻度在改颗粒度时的淡出 → 换数量 → 淡入时长。 */
+const TICK_FADE_MS = 110
 
 /**
  * 竖直档位滑块。
@@ -116,8 +124,7 @@ const KNOB_DISC = 148
  * 边界瞬间跳变。自定义控件负责绘制，但**键盘与 ARIA 必须自己补全**：
  * ↑/→ +1、↓/← -1、Home/End 到两端、PageUp/PageDown 跨两档。
  *
- * 受控：外部 `value` 是唯一真值，内部只保留拖动中的连续坐标 `raw`。
- * 这样页头的主题开关一动，主题滑块的拇指也会跟着动。
+ * 受控：外部 `value` 是唯一真值，内部只保留拖动中的连续坐标。
  */
 function DetentSlider({
   detents,
@@ -189,23 +196,14 @@ function DetentSlider({
 
   /**
    * 核心：把指针位置变成「阻滞-突破」状态。
-   * 核心：把指针位置变成「阻滞-突破」状态。
    *
-   * 【为什么之前会在两档中间闪】
-   * 旧判据只看累积量 `|total| >= threshold`，而 threshold 的下限是 0.12 档 ——
-   * 远小于半档（0.5）。于是指针停在两档中点时，指针每一丁点抖动都会满足
-   * 判据；一旦突破，anchor 被设到 `round(raw)`，而下一个事件里 `raw` 仍在
-   * 中点附近，于是再次满足判据、反向突回去。屏幕上的表现就是拇指在两档
-   * 之间来回跳，也就是「闪烁」。
+   * 【为什么之前会在两档中间闪】旧判据只看累积量 `|total| >= threshold`，
+   * 而 threshold 的下限曾是 0.12 档 —— 远小于半档（0.5）。于是指针停在两档
+   * 中点时，指针每一丁点抖动都会满足判据；一旦突破，anchor 被设到
+   * `round(raw)`，而下一个事件里 `raw` 仍在中点附近，于是再次满足判据、
+   * 反向突回去 —— 屏幕上就是拇指在两档之间来回跳。
    *
-   * 【两个修正】
-   * 1. **阈值几何下限**（见 THRESHOLD_MIN）：必须 ≥ 0.5，否则判据会在
-   *    指针尚未越过分界线时就成立，物理上不可能稳定。
-   * 2. **回差（hysteresis）**：退回方向需要在阈值上多拖 HYSTERESIS 档才生效。
-   *    没有它，突破点就是回退点，指针恰好停在那个坐标上时必然来回翻。
-   *
-   * 推进方向用 threshold，退回方向用 threshold + HYSTERESIS ——
-   * 于是突破与回退落在两个不同的坐标上，中间是一条死带。
+   * 【两个修正】① 阈值几何下限 ≥ 0.5；② 回差把突破点与回退点错开。
    */
   const resolve = useCallback(
     (targetRaw: number, curAnchor: number, curCreep: number) => {
@@ -219,9 +217,8 @@ function DetentSlider({
       const need = total > 0 ? threshold : threshold + HYSTERESIS
 
       if (Math.abs(total) >= need) {
-        // 目标档位：对到最近的整数档，但保证至少走一档（快速拖动可跨多档）。
-        const rawRounded = Math.round(targetRaw)
-        const next = clampIndex(rawRounded, detents)
+        // 目标档位：对到最近的整数档。快速拖动可一次跨多档。
+        const next = clampIndex(Math.round(targetRaw), detents)
         // 若四舍五入后其实没换档（指针只跨了一部分），就不算突破。
         if (next !== curAnchor) {
           // 换档后累积清零，重新从阻滞开始。
@@ -268,20 +265,18 @@ function DetentSlider({
     [onChange, rawFromPointer, resolve],
   )
 
-  const endDrag = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (!draggingRef.current) return
-      draggingRef.current = false
-      setDragging(false)
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId)
-      }
-      // 松手：未达阈值的累积全部作废，拇指弹回当前档心。
-      // 这正是「拨不动就弹回去」的观感。
-      setCreep(0)
-    },
-    [],
-  )
+  const endDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current) return
+    draggingRef.current = false
+    setDragging(false)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    // 松手：未达阈值的累积全部作废，拇指弹回当前档心。
+    // 这正是「拨不动就弹回去」的观感。
+    creepRef.current = 0
+    setCreep(0)
+  }, [])
 
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -313,10 +308,11 @@ function DetentSlider({
   )
 
   // 拇指的视觉位置 = 已突破档位 + 阻滞期累积（很小的一段）。
-  // 这就是「卡住 → 蓄力 → 突然弹开」在屏幕上的全部表现。
   const visual = anchor + creep
   const frac = detents > 1 ? visual / (detents - 1) : 1
   const thumbTop = `calc(${SLIDER_INSET}px + (100% - ${SLIDER_INSET * 2}px) * ${1 - frac})`
+  // 侧壁偏移：顶部时 base 下移（露在下方）、底部时上移（露在上方）、正中重合。
+  const wallOffset = THUMB_DEPTH * (2 * frac - 1)
 
   const detentMarks = useMemo(
     () => Array.from({ length: detents }, (_, i) => i),
@@ -324,10 +320,11 @@ function DetentSlider({
   )
 
   return (
-    <div className="flex flex-col items-center gap-2">
-      <span aria-hidden="true" className="text-[10px] font-extrabold" style={{ color: 'var(--muted)' }}>
+    <div className="flex flex-col items-center gap-2.5">
+      <span aria-hidden="true" className="text-[11px] font-extrabold" style={{ color: 'var(--muted)' }}>
         {topBadge}
       </span>
+
       <div
         id={id}
         ref={trackRef}
@@ -344,6 +341,7 @@ function DetentSlider({
         data-value={value}
         data-visual={visual.toFixed(3)}
         data-threshold={threshold.toFixed(3)}
+        data-wall={wallOffset.toFixed(3)}
         data-dragging={dragging ? 'true' : 'false'}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
@@ -353,55 +351,87 @@ function DetentSlider({
         className="relative shrink-0 cursor-grab touch-none select-none active:cursor-grabbing"
         style={{ height: SLIDER_HEIGHT, width: SLIDER_HIT_WIDTH }}
       >
-        {/* 细长导轨：比拇指窄得多，上下都探出拇指行程之外（对齐参考图）。 */}
+        {/* 滑槽：一条纯色圆角实块，不用描边。 */}
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute -bottom-[10px] -top-[10px] left-1/2 -translate-x-1/2 rounded-full"
+          className="pointer-events-none absolute left-1/2 top-0 -translate-x-1/2 rounded-full"
           style={{
             width: SLIDER_RAIL_WIDTH,
-            background: 'var(--soft)',
-            border: '2px solid var(--ink)',
-            // 内阴影用 --line（由源色派生）而不是写死 rgba(0,0,0,…)。
-            // D-21 已经踩过同类坑：硬编码的黑色在自定义配色下会
-            // 在导轨上留一块不相干的深色（D-22 禁止组件里出现色值）。
-            boxShadow: 'inset 0 2px 0 var(--line)',
+            height: SLIDER_HEIGHT,
+            background: 'var(--line)',
           }}
         />
-        {/* 档位刻痕：让「有几个档」看得见，而不是只能靠手感猜 */}
+        {/* 滑槽两侧的刻度：每个档位一对实色短条。当前档更实一档。 */}
         {detentMarks.map((mark) => {
           const markFrac = detents > 1 ? mark / (detents - 1) : 1
+          const y = `calc(${SLIDER_INSET}px + (100% - ${SLIDER_INSET * 2}px) * ${1 - markFrac})`
+          const active = mark === value
           return (
-            <span
-              key={mark}
-              aria-hidden="true"
-              className="pointer-events-none absolute left-1/2 h-[2px] w-[28px] -translate-x-1/2 rounded-full"
-              style={{
-                top: `calc(${SLIDER_INSET}px + (100% - ${SLIDER_INSET * 2}px) * ${1 - markFrac} - 1px)`,
-                background: 'var(--line)',
-                opacity: mark === value ? 0.25 : 0.5,
-              }}
-            />
+            <span key={mark} aria-hidden="true" className="pointer-events-none">
+              <span
+                className="absolute rounded-[2px]"
+                style={{
+                  top: y,
+                  left: 20,
+                  width: 10,
+                  height: 4,
+                  transform: 'translateY(-50%)',
+                  background: 'var(--ink)',
+                  opacity: active ? 0.75 : 0.28,
+                }}
+              />
+              <span
+                className="absolute rounded-[2px]"
+                style={{
+                  top: y,
+                  left: 58,
+                  width: 10,
+                  height: 4,
+                  transform: 'translateY(-50%)',
+                  background: 'var(--ink)',
+                  opacity: active ? 0.75 : 0.28,
+                }}
+              />
+            </span>
           )
         })}
-        {/* 拇指。拖动中关掉 transition：磁滞手感本身就是位移曲线，
-            再叠一层补间等于双重延迟，会发黏。松手才开 transition 落回档心。 */}
+        {/* 滑块本体：两层纯色块。base 是侧面，cap 是正面。
+            拖动中关掉 transition：磁滞手感本身就是位移曲线，再叠一层补间
+            等于双重延迟，会发黏。松手才开 transition 让拇指优雅落回档心。 */}
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute left-1/2 grid h-[34px] w-[64px] place-items-center rounded-[11px]"
+          data-thumb=""
+          className="pointer-events-none absolute left-1/2"
           style={{
             top: thumbTop,
+            width: THUMB_W,
+            height: THUMB_H,
             transform: 'translate(-50%, -50%)',
-            background: 'var(--cream)',
-            border: '2px solid var(--ink)',
-            boxShadow: '0 4px 0 var(--coral-base)',
-            transition: dragging ? 'none' : 'top 220ms cubic-bezier(0.22, 1.4, 0.4, 1)',
           }}
         >
-          <span className="h-[2px] w-[26px] rounded-full" style={{ background: 'var(--ink)', opacity: 0.55 }} />
+          <span
+            data-thumb-wall=""
+            className="absolute inset-0 rounded-[13px]"
+            style={{
+              background: 'var(--coral-base)',
+              transform: `translateY(${wallOffset}px)`,
+              transition: dragging ? 'none' : 'transform 220ms cubic-bezier(0.22, 1.4, 0.4, 1)',
+            }}
+          />
+          <span
+            data-thumb-cap=""
+            className="absolute inset-0 grid place-items-center rounded-[13px]"
+            style={{ background: 'var(--cream)' }}
+          >
+            <span
+              className="block h-[6px] w-[6px] rounded-full"
+              style={{ background: 'var(--coral-base)' }}
+            />
+          </span>
         </span>
       </div>
 
-      <span aria-hidden="true" className="text-[10px] font-extrabold" style={{ color: 'var(--muted)' }}>
+      <span aria-hidden="true" className="text-[11px] font-extrabold" style={{ color: 'var(--muted)' }}>
         {bottomBadge}
       </span>
       <span id={`${id}-hint`} className="visually-hidden">
@@ -421,7 +451,9 @@ function DetentSlider({
  *   2. 它当前的档位**反过来决定两个滑块的突破阈值** —— 这就是用户说的
  *      「旋钮可以调节阻滞阈值，从用户角度看是调节拨动滑块的难易程度」
  *
- * 颗粒度变化时保持角度、只改档数，所以内部存的是归一化 frac。
+ * 视觉上是两个等大的圆上下错开：cap（亮色，跟随档位旋转）在上、base（暗色
+ * 侧壁，不转动）在下。刻度环围绕 base，位于 base 之上、cap 之下，于是 cap
+ * 会压住刻度环的内侧一截 —— 这就是立体感的来源。
  */
 function DetentKnob({
   detents,
@@ -446,11 +478,25 @@ function DetentKnob({
 
   const index = clampIndex(anchor, detents)
 
-  // 拖动中的同步真值。滑块遇到的那个「同一帧多次 pointermove 读到旧 state」
-  // 的问题在旋钮上同样存在，而且旋钮档多（最多 36 档）、拖动幅度小，
-  // 旧值导致的反向翻转会更明显。所以两边都用 ref 作拖动期间的权威值。
+  // 拖动中的同步真值（理由同滑块：同一帧多次 pointermove 会读到旧 state）。
   const anchorRef = useRef(index)
   const creepRef = useRef(0)
+
+  /**
+   * 刻度环的「滞后档数」：改颗粒度时先淡出旧刻度，等透明度归零再换成新的
+   * 数量并淡入。直接把数量换掉会看到一圈刻度「瞬间重排」，很像抖动。
+   */
+  const [tickDetents, setTickDetents] = useState(detents)
+  const [tickVisible, setTickVisible] = useState(true)
+  useEffect(() => {
+    if (detents === tickDetents) return
+    setTickVisible(false)
+    const timer = setTimeout(() => {
+      setTickDetents(detents)
+      setTickVisible(true)
+    }, TICK_FADE_MS)
+    return () => clearTimeout(timer)
+  }, [detents, tickDetents])
 
   const rawFromPointer = useCallback((clientX: number, clientY: number) => {
     const el = knobRef.current
@@ -480,8 +526,7 @@ function DetentKnob({
       const total = curCreep + (targetRaw - released)
       const need = total > 0 ? knobThreshold : knobThreshold + knobHysteresis
       if (Math.abs(total) >= need) {
-        const rawRounded = Math.round(targetRaw)
-        const next = clampIndex(rawRounded, detents)
+        const next = clampIndex(Math.round(targetRaw), detents)
         if (next !== curAnchor) return { anchor: next, creep: 0 }
       }
       return { anchor: curAnchor, creep: total * CREEP_RATIO }
@@ -520,18 +565,16 @@ function DetentKnob({
     [detents, onThresholdChange, rawFromPointer, resolve],
   )
 
-  const endDrag = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (!draggingRef.current) return
-      draggingRef.current = false
-      setDragging(false)
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId)
-      }
-      setCreep(0)
-    },
-    [],
-  )
+  const endDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current) return
+    draggingRef.current = false
+    setDragging(false)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    creepRef.current = 0
+    setCreep(0)
+  }, [])
 
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -545,6 +588,8 @@ function DetentKnob({
       }
       const commitIndex = (next: number) => {
         const clamped = clampIndex(next, detents)
+        anchorRef.current = clamped
+        creepRef.current = 0
         setAnchor(clamped)
         setCreep(0)
         onThresholdChange(detents > 1 ? clamped / (detents - 1) : 0.5)
@@ -565,11 +610,16 @@ function DetentKnob({
   const visualDetent = anchor + creep
   const visualDeg = detents > 1 ? -KNOB_HALF_DEG + (visualDetent / (detents - 1)) * KNOB_SWEEP_DEG : 0
 
+  const tickMarks = useMemo(
+    () => Array.from({ length: tickDetents }, (_, i) => i),
+    [tickDetents],
+  )
+  // 档数少时刻度加长加粗，档数多时收细，否则 36 档会连成一片。
+  const tickLen = KNOB_TICK_OUTER - KNOB_TICK_INNER
+  const tickW = tickDetents > 20 ? 4 : tickDetents > 10 ? 5 : 7
+
   return (
-    <div className="flex flex-col items-center gap-2">
-      <span aria-hidden="true" className="text-[10px] font-extrabold" style={{ color: 'var(--muted)' }}>
-        旋钮
-      </span>
+    <div className="flex flex-col items-center gap-2.5">
       <div
         id={id}
         ref={knobRef}
@@ -582,6 +632,8 @@ function DetentKnob({
         aria-valuetext={`第 ${index + 1} 档，共 ${detents} 档`}
         data-detents={detents}
         data-value={index}
+        data-tick-detents={tickDetents}
+        data-tick-visible={tickVisible ? 'true' : 'false'}
         data-angle={visualDeg.toFixed(2)}
         data-dragging={dragging ? 'true' : 'false'}
         onPointerDown={handlePointerDown}
@@ -589,38 +641,77 @@ function DetentKnob({
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         onKeyDown={handleKeyDown}
-        className="relative grid cursor-grab touch-none select-none place-items-center rounded-full active:cursor-grabbing"
-        style={{ width: KNOB_SIZE, height: KNOB_SIZE, background: 'var(--soft)', border: '2px solid var(--line)' }}
+        className="relative cursor-grab touch-none select-none active:cursor-grabbing"
+        style={{ width: KNOB_SIZE, height: KNOB_SIZE }}
       >
-        {/* 外圈刻度环：转起来能看到刻度扫过 */}
+        {/* ① 底面圆（侧面阴影）：不随转动，比顶面低 KNOB_DEPTH/2。 */}
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute inset-[10px] rounded-full"
-          style={{ border: '1px solid var(--line)' }}
+          data-knob-base=""
+          className="pointer-events-none absolute left-1/2 top-1/2 rounded-full"
+          style={{
+            width: KNOB_DISC,
+            height: KNOB_DISC,
+            background: 'var(--coral-base)',
+            transform: `translate(-50%, -50%) translateY(${KNOB_DEPTH / 2}px)`,
+          }}
         />
-        {/* 内盘：真正随拖动旋转的部分 */}
+        {/* ② 刻度环：圆心对准底面圆，夹在底面与顶面之间，所以内侧被顶面压住。
+            改颗粒度时快速淡出 → 换数量 → 淡入。 */}
         <span
           aria-hidden="true"
-          className="pointer-events-none relative block rounded-full"
+          data-knob-ticks=""
+          className="pointer-events-none absolute inset-0"
+          style={{
+            transform: `translateY(${KNOB_DEPTH / 2}px)`,
+            opacity: tickVisible ? 1 : 0,
+            transition: `opacity ${TICK_FADE_MS}ms ease`,
+          }}
+        >
+          {tickMarks.map((mark) => {
+            const deg = tickDetents > 1
+              ? -KNOB_HALF_DEG + (mark / (tickDetents - 1)) * KNOB_SWEEP_DEG
+              : 0
+            const dist = (KNOB_TICK_INNER + KNOB_TICK_OUTER) / 2
+            const active = mark === index
+            return (
+              <span
+                key={mark}
+                className="absolute left-1/2 top-1/2 block rounded-[2px]"
+                style={{
+                  width: tickW,
+                  height: tickLen,
+                  marginLeft: -tickW / 2,
+                  marginTop: -tickLen / 2,
+                  transform: `rotate(${deg}deg) translateY(-${dist}px)`,
+                  background: 'var(--ink)',
+                  opacity: active ? 0.85 : 0.3,
+                }}
+              />
+            )
+          })}
+        </span>
+        {/* ③ 顶面圆：随档位旋转，压在刻度环之上。 */}
+        <span
+          aria-hidden="true"
+          data-knob-cap=""
+          className="pointer-events-none absolute left-1/2 top-1/2 rounded-full"
           style={{
             width: KNOB_DISC,
             height: KNOB_DISC,
             background: 'var(--cream)',
-            border: '2px solid var(--ink)',
-            boxShadow: '0 5px 0 var(--coral-base)',
-            transform: `rotate(${visualDeg}deg)`,
+            transform: `translate(-50%, -50%) translateY(-${KNOB_DEPTH / 2}px) rotate(${visualDeg}deg)`,
             transition: dragging ? 'none' : 'transform 260ms cubic-bezier(0.22, 1.4, 0.4, 1)',
           }}
         >
-          {/* 指针：初始朝上，随档位偏转 */}
+          {/* 指针：初始朝上，随档位偏转。实心色块，不描边。 */}
           <span
-            aria-hidden="true"
-            className="absolute left-1/2 top-[9px] h-[28px] w-[6px] -translate-x-1/2 rounded-full"
-            style={{ background: 'var(--ink)' }}
+            className="absolute left-1/2 top-[14px] h-[46px] w-[12px] -translate-x-1/2 rounded-full"
+            style={{ background: 'var(--coral-base)' }}
           />
         </span>
       </div>
-      <span className="text-[10px] font-extrabold" style={{ color: 'var(--muted)' }} data-knob-readout="">
+      <span className="text-[11px] font-extrabold" style={{ color: 'var(--muted)' }} data-knob-readout="">
         {readout}
       </span>
     </div>
@@ -631,12 +722,7 @@ function DetentKnob({
  * 面板本体
  * ============================================================== */
 
-export type TouchPanelProps = {
-  /** 站点自述。从服务端传进来，不在客户端重复文案。 */
-  bio: string
-}
-
-export function TouchPanel({ bio }: TouchPanelProps) {
+export function TouchPanel() {
   const theme = useSyncExternalStore<Theme>(
     subscribeTheme,
     readThemeFromDom,
@@ -645,7 +731,7 @@ export function TouchPanel({ bio }: TouchPanelProps) {
   const [level, setLevel] = useState<GranularityLevel>(3)
 
   // 旋钮上报的「拨动难易度」：1 = 最轻、0 = 最费力。
-  // 它反过来是两个滑块的突破阈值 —— 这就是用户要的「用旋钮调阻滞阈值」。
+  // 它反过来是两个滑块的突破阈值 —— 这就是「用旋钮调阻滞阈值」。
   const [ease, setEase] = useState(0.5)
 
   // ease=1（最轻）→ THRESHOLD_MIN；ease=0（最费力）→ THRESHOLD_MAX。
@@ -684,69 +770,51 @@ export function TouchPanel({ bio }: TouchPanelProps) {
   return (
     <section
       aria-labelledby="touch-panel-title"
-      className="relative overflow-hidden rounded-[34px] p-4 sm:p-6"
+      className="relative overflow-hidden rounded-[34px] p-4 sm:p-6 lg:p-8"
       style={{ background: 'var(--shell)' }}
     >
       <div
-        className="rounded-[24px] p-5 sm:p-6"
-        style={{ background: 'var(--surface)', boxShadow: 'var(--shadow)' }}
+        className="rounded-[24px] p-5 sm:p-6 lg:p-8"
+        style={{ background: 'var(--surface)' }}
       >
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
+        {/* 布局：左右两大块。
+            左 = 标题 + 两个按钮（开始阅读更大，是主入口）。
+            右 = 两个滑块 + 旋钮，整组在列内垂直居中。
+            两列的间距与卡片内边距取同一量级，四周留白因此基本一致；
+            整行用 justify-center 居中而不是 justify-between —— 后者会把两块
+            顶到两端、中间挖出一个大洞（第一版就是那样被否掉的）。 */}
+        <div className="flex flex-col gap-7 lg:flex-row lg:items-center lg:justify-center lg:gap-14">
+          {/* ---- 左：标题 + 两个按钮 ---- */}
+          <div className="order-1 flex w-full flex-col gap-5 lg:w-[460px] lg:shrink-0">
             <h2
               id="touch-panel-title"
-              className="flex items-center gap-2 font-display text-xl"
+              className="flex items-center gap-2 font-display text-2xl"
               style={{ color: 'var(--ink)' }}
             >
-              <Icon name="sentiment_satisfied" size={18} />
+              <Icon name="sentiment_satisfied" size={20} />
               触感体验面板
             </h2>
-            <p className="mt-1.5 max-w-[430px] text-sm leading-relaxed" style={{ color: 'var(--muted)' }}>
-              这里的东西都能按。滑块与旋钮有档位吸附，拨动要花一点力气 —— 拖过头才会「咔」地落进下一档。
-            </p>
-            {/* 自述原来放在左栏里，把那一栏撑得比参考图高很多。
-                参考图左栏只有两块矩形，所以自述上移到标题区。 */}
-            <p className="mt-1.5 max-w-[430px] text-xs leading-relaxed" style={{ color: 'var(--muted)' }}>
-              {bio}
-            </p>
-          </div>
-          <span
-            className="rounded-full px-3 py-1 text-[11px] font-extrabold"
-            style={{ background: 'var(--soft)', color: 'var(--muted)' }}
-          >
-            旋钮暂未绑定功能
-          </span>
-        </div>
-
-        {/* 布局严格对齐参考图 img/Snipaste_2026-10-24_14-16-54.png：
-            左 = 两块上下堆叠的立体按钮（高矮不一），中 = 两根细长竖直滑块，
-            右 = 一个大旋钮（直径与滑块导轨同高，是整块面板的视觉重心）。
-            三组控件在同一行横向铺开、间距均匀；整行用固定 gap 居中收紧，
-            而不是 justify-between —— 后者会把按钮组与旋钮顶到两端、中间留白。 */}
-        <div className="mt-7 flex flex-col items-center gap-6 lg:mt-8 lg:flex-row lg:items-center lg:justify-center lg:gap-10">
-          {/* ---- 左：两块立体按钮 ---- */}
-          <div className="order-3 flex w-full max-w-[360px] flex-col gap-4 lg:order-1 lg:w-[360px] lg:shrink-0">
             <ToyButton
               href="/posts"
               size="large"
               className="w-full"
-              topClassName="h-[74px] justify-between px-6"
+              topClassName="h-[112px] justify-between px-7 text-[19px]"
             >
-              开始阅读 <Icon name="arrow_forward" size={17} />
+              开始阅读 <Icon name="arrow_forward" size={20} />
             </ToyButton>
             <ToyButton
               href="/about"
               size="large"
               variant="pink"
               className="w-full"
-              topClassName="h-[96px] justify-between px-6"
+              topClassName="h-[80px] justify-between px-7"
             >
-              关于我 <Icon name="auto_awesome" size={17} />
+              关于我 <Icon name="auto_awesome" size={18} />
             </ToyButton>
           </div>
 
-          {/* ---- 中：两根细长竖直滑块 ---- */}
-          <div className="order-1 flex justify-center gap-3 lg:order-2 lg:gap-9">
+          {/* ---- 右：两个滑块 + 旋钮 ---- */}
+          <div className="order-2 flex items-center justify-center gap-6 lg:shrink-0 lg:gap-7">
             <DetentSlider
               detents={GRANULARITY_LEVELS.length}
               value={level - 1}
@@ -767,15 +835,11 @@ export function TouchPanel({ bio }: TouchPanelProps) {
               onChange={handleThemeIndex}
               label="明暗主题"
               valueText={(index) => (index === 1 ? '夜间' : '日间')}
-              topBadge={<Icon name="dark_mode" size={13} />}
-              bottomBadge={<Icon name="light_mode" size={13} />}
+              topBadge={<Icon name="dark_mode" size={14} />}
+              bottomBadge={<Icon name="light_mode" size={14} />}
               hint="两档拨动开关，上为夜间、下为日间，与页头开关共用同一份主题设置。"
               threshold={threshold}
             />
-          </div>
-
-          {/* ---- 右：旋钮 ---- */}
-          <div className="order-2 flex justify-center lg:order-3 lg:shrink-0">
             <DetentKnob
               detents={knobDetents}
               label="档位旋钮"
