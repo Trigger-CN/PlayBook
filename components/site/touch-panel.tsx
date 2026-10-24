@@ -58,9 +58,24 @@ import type { Theme } from '@/lib/theme-shared'
 /** 阻滞期间拇指跟随指针的比例。越小越“卡”。 */
 const CREEP_RATIO = 0.14
 
-/** 阈值两端：越往外越难拨动。单位是“档”，半档 = 0.5。 */
-const THRESHOLD_MIN = 0.12
-const THRESHOLD_MAX = 0.62
+const THRESHOLD_MIN = 0.5
+const THRESHOLD_MAX = 0.95
+
+/**
+ * 回差（hysteresis）：退回方向比推进方向多拖这么多档才生效。
+ *
+ * 【为什么必须有】没有回差时，突破与回退发生在同一个坐标点上。指针恰好停在
+ * 那个坐标（例如两档中点）时，操作系统的亚像素抖动就会让判据一帧成立、
+ * 下一帧不成立 —— 档位在相邻两档之间反复翻转，即用户看到的「闪」。
+ *
+ * 加了回差后，推进在 `threshold` 处发生、回退在 `threshold + HYSTERESIS` 处
+ * 才发生，两者之间是一条稳定的死带，指针停在那里不会引发任何状态变化。
+ *
+ * 取 0.6 档：叠加到 0.5..0.95 的上，回退阈值落在 1.1..1.55 档。
+ * 意味着「弹过去之后，要往回拖过一整档才会弹回来」——符合物理旋钮的观感，
+ * 同时也不至于让人拖不回去。
+ */
+const HYSTERESIS = 0.6
 
 const clampIndex = (index: number, detents: number) =>
   index < 0 ? 0 : index > detents - 1 ? detents - 1 : index
@@ -128,17 +143,29 @@ function DetentSlider({
 }) {
   const id = useId()
   const trackRef = useRef<HTMLDivElement>(null)
-  /** 已突破到的档位坐标（整数）。拖动中被突破逐步推进。 */
+  /** 已突破到的档位坐标（整数）。用 state 只是为了驱动渲染。 */
   const [anchor, setAnchor] = useState(value)
-  /** 阻滞期累积的「未释放」位移（档位单位，带符号，范围 ±CREEP）。 */
+  /** 阻滞期累积的「未释放」位移（档位单位，带符号）。 */
   const [creep, setCreep] = useState(0)
   const [dragging, setDragging] = useState(false)
   const draggingRef = useRef(false)
+  /**
+   * 拖动期间的**权威真值**。
+   *
+   * 【为什么不能只靠 state】setState 是异步的，而 pointermove 可能在同一帧
+   * 内连着来好几个（高频鼠标/触控笔）。每个 handler 都闭包捕获渲染时的
+   * anchor，于是后一个事件拿到的是**旧** anchor，算出错误的 total 并反向
+   * 翻转 —— 这也是「闪」的第三个来源。ref 是同步写，不会被异步更新拖后。
+   */
+  const anchorRef = useRef(value)
+  const creepRef = useRef(0)
 
   // 外部真值变化（例如页头切了主题）→ 重置整套状态。
   // 拖动中不同步，否则会把用户正拖着的状态打回去。
   useEffect(() => {
     if (!draggingRef.current) {
+      anchorRef.current = value
+      creepRef.current = 0
       setAnchor(value)
       setCreep(0)
     }
@@ -162,34 +189,47 @@ function DetentSlider({
 
   /**
    * 核心：把指针位置变成「阻滞-突破」状态。
+   * 核心：把指针位置变成「阻滞-突破」状态。
    *
-   * 返回下一个 anchor / creep，由调用方决定怎么入库。
-   * 写成纯函数是为了不依赖 state 闭包（同一帧内多次 move 不会读到旧值）。
+   * 【为什么之前会在两档中间闪】
+   * 旧判据只看累积量 `|total| >= threshold`，而 threshold 的下限是 0.12 档 ——
+   * 远小于半档（0.5）。于是指针停在两档中点时，指针每一丁点抖动都会满足
+   * 判据；一旦突破，anchor 被设到 `round(raw)`，而下一个事件里 `raw` 仍在
+   * 中点附近，于是再次满足判据、反向突回去。屏幕上的表现就是拇指在两档
+   * 之间来回跳，也就是「闪烁」。
+   *
+   * 【两个修正】
+   * 1. **阈值几何下限**（见 THRESHOLD_MIN）：必须 ≥ 0.5，否则判据会在
+   *    指针尚未越过分界线时就成立，物理上不可能稳定。
+   * 2. **回差（hysteresis）**：退回方向需要在阈值上多拖 HYSTERESIS 档才生效。
+   *    没有它，突破点就是回退点，指针恰好停在那个坐标上时必然来回翻。
+   *
+   * 推进方向用 threshold，退回方向用 threshold + HYSTERESIS ——
+   * 于是突破与回退落在两个不同的坐标上，中间是一条死带。
    */
   const resolve = useCallback(
     (targetRaw: number, curAnchor: number, curCreep: number) => {
-      // 这一轮指针相对「上次突破点」的累积位移。
-      // 把已释放的部分剔掉：anchor + creep 才是拇指当前的真实位置。
+      // 注意：curCreep 在代数上会抵消 ——
+      //   total = creep + (raw - (anchor + creep)) = raw - anchor
+      // 留着这个形只为了让「拇指当前位置 = anchor + creep」在代码里可见。
       const released = curAnchor + curCreep
-      const pushed = targetRaw - released
-      const total = released + pushed - curAnchor // = creep + pushed
+      const total = curCreep + (targetRaw - released)
 
-      // 累到超过阈值 → 突破。可能一次跨多档（快速拖动），所以用 while。
-      if (Math.abs(total) >= threshold) {
-        const direction = total > 0 ? 1 : -1
-        // 目标档位：从上一次突破点朝方向走，直接对到整数档。
-        // 把「实际指针位置」四舍五入到最近整数档，同时保证至少走一档。
+      // 回退比推进需要多拖一段：这就是回差，消除中点上必然出现的来回翻转。
+      const need = total > 0 ? threshold : threshold + HYSTERESIS
+
+      if (Math.abs(total) >= need) {
+        // 目标档位：对到最近的整数档，但保证至少走一档（快速拖动可跨多档）。
         const rawRounded = Math.round(targetRaw)
-        let next = curAnchor + direction
-        if (direction > 0) next = Math.max(next, Math.min(rawRounded, detents - 1))
-        else next = Math.min(next, Math.max(rawRounded, 0))
-        next = clampIndex(next, detents)
-        // 换档后累积清零，重新从阻滞开始。
-        return { anchor: next, creep: 0 }
+        const next = clampIndex(rawRounded, detents)
+        // 若四舍五入后其实没换档（指针只跨了一部分），就不算突破。
+        if (next !== curAnchor) {
+          // 换档后累积清零，重新从阻滞开始。
+          return { anchor: next, creep: 0 }
+        }
       }
 
       // 未达阈值 → 只跟随一小部分（这就是阻滞感）。
-      // 累积量本身封顶在阈值内，且乘以 CREEP_RATIO 后才用于视觉。
       return { anchor: curAnchor, creep: total * CREEP_RATIO }
     },
     [detents, threshold],
@@ -201,29 +241,31 @@ function DetentSlider({
       event.currentTarget.setPointerCapture(event.pointerId)
       draggingRef.current = true
       setDragging(true)
-      // 按下瞬间不做「跳跃定位」——那会把阻滞感直接绕过去。
-      // 只以按下的位置为新的突破基准点，拇指留在当前档位。
-      const raw = rawFromPointer(event.clientY)
-      const nearest = clampIndex(Math.round(raw), detents)
-      setAnchor(nearest)
+      // 按下不改位置（不做跳跃定位）——那会把阻滞感直接绕过去。
+      // 以当前已确认档位为基准点，ref 同步写入。
+      anchorRef.current = value
+      creepRef.current = 0
+      setAnchor(value)
       setCreep(0)
-      if (nearest !== value) onChange(nearest)
     },
-    [detents, onChange, rawFromPointer, value],
+    [value],
   )
 
   const handlePointerMove = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (!draggingRef.current) return
       const targetRaw = rawFromPointer(event.clientY)
-      const next = resolve(targetRaw, anchor, creep)
-      if (next.anchor !== anchor) {
+      const next = resolve(targetRaw, anchorRef.current, creepRef.current)
+      if (next.anchor !== anchorRef.current) {
+        anchorRef.current = next.anchor
         setAnchor(next.anchor)
-        if (next.anchor !== value) onChange(next.anchor)
+        // 档位变了 → 立即上报，外部真值（主题 cookie / 颗粒度）跟着变。
+        onChange(next.anchor)
       }
+      creepRef.current = next.creep
       setCreep(next.creep)
     },
-    [anchor, creep, onChange, rawFromPointer, resolve, value],
+    [onChange, rawFromPointer, resolve],
   )
 
   const endDrag = useCallback(
@@ -404,9 +446,15 @@ function DetentKnob({
 
   const index = clampIndex(anchor, detents)
 
+  // 拖动中的同步真值。滑块遇到的那个「同一帧多次 pointermove 读到旧 state」
+  // 的问题在旋钮上同样存在，而且旋钮档多（最多 36 档）、拖动幅度小，
+  // 旧值导致的反向翻转会更明显。所以两边都用 ref 作拖动期间的权威值。
+  const anchorRef = useRef(index)
+  const creepRef = useRef(0)
+
   const rawFromPointer = useCallback((clientX: number, clientY: number) => {
     const el = knobRef.current
-    if (!el) return anchor
+    if (!el) return anchorRef.current
     const rect = el.getBoundingClientRect()
     const cx = rect.left + rect.width / 2
     const cy = rect.top + rect.height / 2
@@ -415,22 +463,26 @@ function DetentKnob({
     const clampedDeg = deg < -KNOB_HALF_DEG ? -KNOB_HALF_DEG : deg > KNOB_HALF_DEG ? KNOB_HALF_DEG : deg
     const t = (clampedDeg + KNOB_HALF_DEG) / KNOB_SWEEP_DEG
     return t * (detents - 1)
-  }, [anchor, detents])
+  }, [detents])
 
-  /** 旋钮自己的阻滞阈值：固定值，档多的旋钮自然需要更细的拖动才突破。 */
+  /**
+   * 旋钮自己的阻滞阈值：固定值，档多的旋钮自然需要更细的拖动才突破。
+   *
+   * 【下限同样是 0.5】与滑块同理：小于半档时判据会在指针越过档界之前成立，
+   * 指针停在两档之间就能来回翻转。再加回差把突破点与回退点错开。
+   */
   const knobThreshold = 0.5
+  const knobHysteresis = 0.6
 
   const resolve = useCallback(
     (targetRaw: number, curAnchor: number, curCreep: number) => {
       const released = curAnchor + curCreep
       const total = curCreep + (targetRaw - released)
-      if (Math.abs(total) >= knobThreshold) {
-        const direction = total > 0 ? 1 : -1
+      const need = total > 0 ? knobThreshold : knobThreshold + knobHysteresis
+      if (Math.abs(total) >= need) {
         const rawRounded = Math.round(targetRaw)
-        let next = curAnchor + direction
-        if (direction > 0) next = Math.max(next, Math.min(rawRounded, detents - 1))
-        else next = Math.min(next, Math.max(rawRounded, 0))
-        return { anchor: clampIndex(next, detents), creep: 0 }
+        const next = clampIndex(rawRounded, detents)
+        if (next !== curAnchor) return { anchor: next, creep: 0 }
       }
       return { anchor: curAnchor, creep: total * CREEP_RATIO }
     },
@@ -444,24 +496,28 @@ function DetentKnob({
       draggingRef.current = true
       setDragging(true)
       // 按下不改位置（不做跳跃定位），只清空累积。
+      anchorRef.current = index
+      creepRef.current = 0
       setCreep(0)
     },
-    [],
+    [index],
   )
 
   const handlePointerMove = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (!draggingRef.current) return
       const targetRaw = rawFromPointer(event.clientX, event.clientY)
-      const next = resolve(targetRaw, anchor, creep)
-      if (next.anchor !== anchor) {
+      const next = resolve(targetRaw, anchorRef.current, creepRef.current)
+      if (next.anchor !== anchorRef.current) {
+        anchorRef.current = next.anchor
         setAnchor(next.anchor)
         // 档位变了 → 上报「拨动难易度」。越小越费力。
         onThresholdChange(detents > 1 ? next.anchor / (detents - 1) : 0.5)
       }
+      creepRef.current = next.creep
       setCreep(next.creep)
     },
-    [anchor, creep, detents, onThresholdChange, rawFromPointer, resolve],
+    [detents, onThresholdChange, rawFromPointer, resolve],
   )
 
   const endDrag = useCallback(
