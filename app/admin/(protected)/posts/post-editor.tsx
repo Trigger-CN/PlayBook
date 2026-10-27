@@ -29,7 +29,7 @@ import { EMPTY_POST_FORM_STATE, type PostFormState } from './form-state'
  * useActionState 原地返回状态就能保住输入」。**这个判断不成立**：
  * React 19 在 `<form action={fn}>` 提交完成后会**自动重置表单**（等价于
  * 调用 `form.reset()`），非受控字段会被重置回 `defaultValue`。
- * 结果是：填好正文、slug 打错、点保存 → 服务端返回校验错误 →
+ * 结果是：填好正文、日期格式打错、点保存 → 服务端返回校验错误 →
  * 页面跳一下、**正文清空**。
  *
  * 受控 + `value` 则不受 `form.reset()` 影响（React 在重置后会重新把
@@ -95,7 +95,6 @@ export function PostEditor({
   )
 
   // 全部字段受控：失败时 DOM 不会被表单重置清空。
-  const [slug, setSlug] = useState(initial.slug)
   const [title, setTitle] = useState(initial.title)
   const [summary, setSummary] = useState(initial.summary)
   const [body, setBody] = useState(initial.body)
@@ -133,8 +132,9 @@ export function PostEditor({
       className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start"
     >
       {/*
-        slug 在编辑态不可改（改 slug 需要重定向规划），用 hidden 提交原值；
-        新建态必须是可见可编辑的输入框，否则新建永远失败。
+        slug 由服务端生成（决策 D-31），界面没有输入框。
+        编辑态用 hidden 把原值带回，仅作为定位条件；新建态完全不传，
+        服务端在 upsertPost 里现生成一个。
       */}
       {isNew ? null : <input type="hidden" name="slug" value={initial.slug} />}
       <input type="hidden" name="expectedVersion" value={initial.expectedVersion} />
@@ -249,30 +249,19 @@ export function PostEditor({
           <p className="text-[12px] font-extrabold">发布</p>
 
           {isNew ? (
-            <Field
-              label="slug（网址标识）"
-              htmlFor="post-slug"
-              hint="小写字母、数字与连字符，例如 hello-world。建好后不可修改。"
-            >
-              <input
-                id="post-slug"
-                name="slug"
-                type="text"
-                value={slug}
-                onChange={(event) => setSlug(event.target.value)}
-                maxLength={120}
-                required
-                placeholder="hello-world"
-                className="rounded-xl border px-3 py-2 text-sm"
-                style={fieldStyle('slug')}
-              />
-            </Field>
+            <div className="grid gap-1">
+              <p className="text-[12px] font-extrabold">网址标识</p>
+              <p className="text-[11px] leading-snug text-[var(--muted)]">
+                保存时自动生成（形如 post-3f9a2b1c5d7e），不需要填。生成后不会变，
+                改标题也不影响已有链接。
+              </p>
+            </div>
           ) : (
             <div className="grid gap-1">
-              <p className="text-[12px] font-extrabold">slug</p>
+              <p className="text-[12px] font-extrabold">网址标识</p>
               <p className="break-all text-[12px] text-[var(--muted)]">{initial.slug}</p>
               <p className="text-[11px] leading-snug text-[var(--muted)]">
-                已创建，不可修改（改 slug 需要规划重定向）。
+                由系统生成，不可修改（改网址会让已有链接失效）。
               </p>
             </div>
           )}

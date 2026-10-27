@@ -43,7 +43,7 @@ type Props = {
 }
 
 const ERROR_MESSAGES: Record<string, string> = {
-  bad_id: 'ID 只能是小写字母、数字与连字符，且不超过 120 字符。',
+  bad_id: '节点 ID 不合法，请刷新页面后重试。',
   bad_content: '正文长度必须在 1 到 5000 字符之间。',
   bad_type: '类型不合法。',
   bad_status: '状态不合法。',
@@ -52,6 +52,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   bad_external_url: '外部链接必须以 http:// 或 https:// 开头。',
   conflict: '该节点已被其他人修改，请刷新后重新编辑，本次修改未保存。',
   not_found: '节点不存在。',
+  generate_failed: '生成节点 ID 失败，请再点一次创建。',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -126,7 +127,7 @@ export default async function AdminTimelinePage({ searchParams }: Props) {
       <header className="mb-5">
         <h1 className="font-display text-2xl">时间轴管理</h1>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          节点 ID 是公开地址的一部分（/timeline/&lt;id&gt;），也是互动数据的目标键，发布后不宜更改。
+          节点 ID 由系统自动生成（形如 tl-3f9a2b1c5d7e），创建后不可修改 —— 它是公开地址的一部分，也是互动数据的目标键。
         </p>
       </header>
 
@@ -176,17 +177,18 @@ export default async function AdminTimelinePage({ searchParams }: Props) {
           ) : null}
           <input type="hidden" name="returnTo" value={`/admin/timeline${listQuery}`} />
 
+          {editing ? (
+            <div>
+              <input type="hidden" name="id" value={editing.id} />
+              <p className="text-xs text-[var(--muted)]">
+                节点 ID <code className="font-bold">{editing.id}</code>
+                {' · '}
+                由系统生成，不可修改。
+              </p>
+            </div>
+          ) : null}
+
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field
-              label="ID（slug）"
-              name="id"
-              required
-              placeholder="my-new-node"
-              defaultValue={editing?.id}
-              // ID 是公开地址与互动目标键，改名等于换了一个目标：编辑态锁定。
-              readOnly={Boolean(editing)}
-              hint={editing ? 'ID 是公开地址的一部分，创建后不可修改。' : undefined}
-            />
             <Field
               label="标题（可选）"
               name="title"

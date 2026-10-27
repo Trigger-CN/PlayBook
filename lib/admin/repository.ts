@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { createPostSlug, createTimelineId } from '@/lib/admin/ids'
 import { query, queryOne } from '@/lib/db/query'
 import type { CommentStatus } from '@/lib/interactions/types'
 
@@ -317,7 +318,8 @@ export async function listTimelineForAdmin(
  * 从而写正确的活动事件（内容变更 ≠ 可见性变更）。
  */
 export async function upsertTimelineItem(input: {
-  id: string
+  /** 编辑时是目标节点；新建传 null，由服务端生成。 */
+  id: string | null
   title: string | null
   content: string
   type: string
@@ -328,8 +330,51 @@ export async function upsertTimelineItem(input: {
   externalUrl: string | null
   /** 新建时传 null；编辑时传表单里的旧 updated_at 值。 */
   expectedUpdatedAt?: string | null
-}): Promise<{ ok: boolean; created: boolean; conflict: boolean; previousStatus: string | null }> {
+}): Promise<{
+  ok: boolean
+  created: boolean
+  conflict: boolean
+  previousStatus: string | null
+  /** 成功时是实际落库的 ID（新建即生成值）；失败为 null。 */
+  id: string | null
+}> {
   const publishedAt = input.status === 'published' ? input.occurredAt : null
+
+  // 新建：ID 由服务端生成，不读表单值。
+  //
+  // 唯一性交给主键约束：`on conflict (id) do nothing` 让「撞了就换一个」在同一条
+  // 语句内原子完成。先查再插会留下「查完到插入之间被人插一脚」的窗口，而这里的
+  // 重试不需要那个窗口不存在 —— 它本来就靠约束来判定。
+  if (input.id === null) {
+    for (let attempt = 0; attempt < ID_GENERATE_ATTEMPTS; attempt += 1) {
+      const id = createTimelineId()
+      const inserted = await query<{ id: string }>(
+        `insert into public.timeline_items
+           (id, title, content, type, status, occurred_at, published_at, image_url, image_alt, external_url)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         on conflict (id) do nothing
+         returning id`,
+        [
+          id,
+          input.title,
+          input.content,
+          input.type,
+          input.status,
+          input.occurredAt,
+          publishedAt,
+          input.imageUrl,
+          input.imageAlt,
+          input.externalUrl,
+        ],
+      )
+      if (inserted.length > 0) {
+        return { ok: true, created: true, conflict: false, previousStatus: null, id }
+      }
+    }
+
+    // 连续多次撞上已有 ID：随机源或约束出了问题，交给调用方提示重试。
+    return { ok: false, created: false, conflict: false, previousStatus: null, id: null }
+  }
 
   const existing = await queryOne<{ id: string; status: string }>(
     `select id, status from public.timeline_items where id = $1`,
@@ -344,7 +389,13 @@ export async function upsertTimelineItem(input: {
       [input.id],
     )
     if ((current?.stamp ?? '') !== input.expectedUpdatedAt) {
-      return { ok: false, created: false, conflict: true, previousStatus: existing.status }
+      return {
+        ok: false,
+        created: false,
+        conflict: true,
+        previousStatus: existing.status,
+        id: null,
+      }
     }
   }
 
@@ -386,8 +437,12 @@ export async function upsertTimelineItem(input: {
     created: existing === null,
     conflict: false,
     previousStatus: existing?.status ?? null,
+    id: input.id,
   }
 }
+
+/** ID 生成冲突时的重试次数。48 位随机空间下正常永远用不到第二次。 */
+const ID_GENERATE_ATTEMPTS = 4
 
 /**
  * 切换时间轴节点状态。
@@ -840,17 +895,12 @@ export async function getPostForEdit(slug: string): Promise<AdminPostDetail | nu
   }
 }
 
-/** `slug` 是否已被占用。新建文章时用来给出「换个 slug」而不是撞唯一约束报错。 */
-export async function postSlugExists(slug: string): Promise<boolean> {
-  const row = await queryOne<{ exists: boolean }>(
-    'select exists (select 1 from public.posts where slug = $1) as exists',
-    [slug],
-  )
-  return row?.exists === true
-}
+/** slug 生成冲突时的重试次数。48 位随机空间下正常永远用不到第二次。 */
+const SLUG_GENERATE_ATTEMPTS = 4
 
 export type PostWriteInput = {
-  slug: string
+  /** 编辑时是目标文章；新建传 null，由服务端生成。 */
+  slug: string | null
   title: string
   summary: string
   cover: string | null
@@ -867,11 +917,24 @@ export type PostWriteInput = {
 }
 
 export type PostWriteResult =
-  | { ok: true; created: boolean; previousStatus: string | null }
-  | { ok: false; reason: 'conflict' | 'slug_taken' }
+  | { ok: true; created: boolean; previousStatus: string | null; slug: string }
+  | { ok: false; reason: 'conflict' | 'generate_failed' }
 
 /**
  * 保存文章（新建或更新）。
+ *
+ * ## slug 由服务端生成，不读表单
+ *
+ * 新建时完全忽略 `input.slug`，用 `createPostSlug()` 现生成。用户要写的是内容，
+ * 不是网址；而中文标题经任何 slugify 之后要么是空串（被 posts_slug_check 拒绝），
+ * 要么是一串拼音，既难读又容易撞。
+ *
+ * 唯一性由数据库的 unique 约束兜底：`on conflict (slug) do nothing` 让
+ * 「撞了就换一个」在同一条语句内原子完成，不存在「先查再插」之间被插一脚的窗口。
+ * 会重试 `SLUG_GENERATE_ATTEMPTS` 次；48 位随机空间下第二次几乎不可能发生。
+ *
+ * 编辑时 slug 是定位条件，永不改变 —— 标题随便改，已有链接都不会失效。
+ * 改标题是编辑行为，换网址是破坏行为，两者本来就不该绑在一起。
  *
  * ## 为什么写入 `source = 'admin'`
  *
@@ -893,34 +956,42 @@ export async function upsertPost(input: PostWriteInput): Promise<PostWriteResult
   const publishedAt = input.publishedAt.trim() === '' ? null : input.publishedAt
 
   if (input.expectedVersion === null) {
-    // 新建：先查 slug，把唯一约束冲突变成一句可读的话。
-    if (await postSlugExists(input.slug)) {
-      return { ok: false, reason: 'slug_taken' }
+    for (let attempt = 0; attempt < SLUG_GENERATE_ATTEMPTS; attempt += 1) {
+      const slug = createPostSlug()
+      const inserted = await query<{ slug: string }>(
+        `insert into public.posts
+           (slug, title, summary, cover_url, cover_alt, tags, category, featured,
+            reading_time, body, source, status, published_at, updated_at)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'admin',$11,$12,current_date)
+         on conflict (slug) do nothing
+         returning slug`,
+        [
+          slug,
+          input.title,
+          input.summary,
+          input.cover,
+          input.coverAlt,
+          input.tags,
+          input.category,
+          input.featured,
+          input.readingTime,
+          input.body,
+          input.status,
+          publishedAt,
+        ],
+      )
+
+      if (inserted.length > 0) {
+        return { ok: true, created: true, previousStatus: null, slug }
+      }
     }
 
-    await query(
-      `insert into public.posts
-         (slug, title, summary, cover_url, cover_alt, tags, category, featured,
-          reading_time, body, source, status, published_at, updated_at)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'admin',$11,$12,current_date)`,
-      [
-        input.slug,
-        input.title,
-        input.summary,
-        input.cover,
-        input.coverAlt,
-        input.tags,
-        input.category,
-        input.featured,
-        input.readingTime,
-        input.body,
-        input.status,
-        publishedAt,
-      ],
-    )
-
-    return { ok: true, created: true, previousStatus: null }
+    // 连续多次撞上已有 slug：随机源或唯一约束出了问题。交给调用方提示重试，
+    // 而不是静默在别处失败。
+    return { ok: false, reason: 'generate_failed' }
   }
+
+  if (input.slug === null) return { ok: false, reason: 'generate_failed' }
 
   const before = await queryOne<{ status: string }>(
     'select status from public.posts where slug = $1 and version = $2',
@@ -955,7 +1026,7 @@ export async function upsertPost(input: PostWriteInput): Promise<PostWriteResult
 
   if (rows.length === 0) return { ok: false, reason: 'conflict' }
 
-  return { ok: true, created: false, previousStatus: before.status }
+  return { ok: true, created: false, previousStatus: before.status, slug: input.slug }
 }
 
 /**

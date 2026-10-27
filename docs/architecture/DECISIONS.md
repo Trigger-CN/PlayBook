@@ -3092,3 +3092,171 @@ import './lib/load-env.mjs'
 - 未验证含 `\r\n` 的 `.env.local`（解析用了 `split(/\r?\n/)`，理论上覆盖，但没有实测样本）。
 - 未验证带 BOM 的 `.env.local`。若首个键名带 BOM，正则 `/^[A-Za-z_][A-Za-z0-9_]*$/` 会拒绝该行，表现为「这个键没生效」而不是报错。这是有意的保守行为，不是遗漏。
 - 未处理多行值（`KEY="line1\nline2"`）。当前项目的 env 都是单行。
+
+## D-31 文章 slug 与时间轴节点 ID 改为服务端自动生成
+
+### 1. 需求
+
+原文：`文章和时间轴的slug应该是自动生成的唯一id值，而不是让用户自己填`
+
+改造前有两处手填：`/admin/posts/new` 的「网址标识（slug）」输入框，`/admin/timeline` 的「节点 ID」输入框。两者都是正则 `^[a-z0-9]+(?:-[a-z0-9]+)*$` 的约束，作者必须自己想一个符合格式、且尚未被占用的串。
+
+### 2. 为什么不再让人填
+
+用户要写的是内容，不是网址。要求作者为一个中文标题想一个「小写字母、数字与连字符」的串，结果只有三种：
+
+- 与内容无关的占位词（`post-1`、`test`、`a`）；
+- 从别处复制来的重复词，第一次撞上唯一约束才知道要改；
+- 干脆不填，然后被格式校验拦下来。
+
+这三件事都不该由写字的人承担。slug 是**标识**，不是**内容** —— 标识的职责是唯一且稳定，恰好是随机串最擅长的事。
+
+### 3. 为什么不用标题转写
+
+最直觉的方案是「把标题 slugify 成拼音或英文短横线串」。这条路在本项目里走不通：
+
+- **中文标题经 slugify 只剩空串。** 「把个人网站做成一台可玩的记录机」一个 ASCII 字母都没有，任何 `[^a-z0-9]` 过滤后都是 `''`，而数据库有 `constraint posts_slug_check check (slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$')` —— 空串直接被拒绝，表现为创建失败。
+- **转拼音则既不可读又易撞。** 「关于我」与「关于你」的拼音前缀相同，长短标题压缩后碰撞概率远高于随机串；而且拼音串对一个中文读者来说仍然不是「可读的网址」，只是把不可读从字母变成了另一串字母。
+
+更关键的一点：**标题是会改的。** 一旦 slug 由标题派生，改标题就会顺手改掉网址，任何已分享出去的链接都会失效。把「改名」与「换地址」绑在一起，是这类系统最常见的破坏性设计。
+
+### 4. 为什么是 12 位十六进制
+
+生成规则：
+
+| 对象 | 形态 | 例 |
+| --- | --- | --- |
+| 文章 slug | `post-<12 位小写 hex>` | `post-83f57d70e773` |
+| 时间轴节点 ID | `tl-<12 位小写 hex>` | `tl-a3ac727196ad` |
+
+12 位十六进制 = **48 位随机**，共 **2.8×10^14** 个取值。按生日界估算，要在一张表里堆到约 **2000 万行**，碰撞概率才到 50% —— 个人内容站几十年都到不了这个量级。
+
+长度上是取舍：`post-` 加 12 位共 **17 字符**，放进 `/posts/post-83f57d70e773` 仍然读得下去、能整段选中复制；再短（8 位 = 32 位随机）在百万行量级就开始有可感知的碰撞；再长则开始影响 URL 的可读与可记。
+
+`tl-` 与 `post-` 前缀的作用不是防碰撞，而是**在只看字符串时就能分辨这是哪类标识** —— 后台日志、活动事件、缓存失效键里到处都是裸 id，有前缀就不必回头查表。
+
+### 5. 唯一性不靠概率，靠约束
+
+生成器只负责给出**候选值**。真正的保证来自数据库约束，配合 `on conflict ... do nothing returning ...` 让「撞了就换一个」在**一条语句里原子完成**：
+
+```
+insert into public.posts (...) values (...)
+on conflict (slug) do nothing
+returning slug
+```
+
+`returning` 行数为 0 说明这一轮撞了，换一个候选重试，上限 `SLUG_GENERATE_ATTEMPTS = 4`。时间轴新建同理（`ID_GENERATE_ATTEMPTS = 4`）。
+
+**这里刻意不用「先查再插」。** 旧实现里有一个 `postSlugExists(slug)`，在插入前单独查一次。那种写法有一个 TOCTOU 窗口：查完之后、插入之前，另一条请求可能刚好插入了同一个值，于是两条都以为自己是唯一的，其中一条在约束上失败并抛出未被处理的错误。改用 `on conflict do nothing returning` 之后，判断与写入是同一个原子操作，窗口不存在。`postSlugExists` 已随本次改动删除。
+
+值得注意的是「4 次都撞」这个分支实际上永远不会走到。留着它不是为了容错，而是为了**不写出一个可能死循环的 `while(true)`**：任何「重试直到成功」的循环都必须有一个明确的出口，哪怕这个出口在数学上不可达。
+
+### 6. 生成后不可变
+
+- 编辑时 slug 只作为**定位条件**：`where slug = $1 and version = $2`，永远不会出现在 `UPDATE` 的 `SET` 列表里。
+- 编辑页用 `<input type="hidden" name="slug">` 把原值带回，仅用于定位；表单上没有可见输入框，用户改不了。
+- 时间轴节点同理：编辑态渲染 hidden 的 `id` 并在页面上只读展示「节点 ID xxx · 由系统生成，不可修改」。
+
+**改标题是编辑行为，换网址是破坏行为，两者本来就不该绑在一起。** 这条约束的收益是：以后任何标题、摘要、封面的调整都不会让历史链接 404，也不需要维护重定向表。
+
+`GENERATED_ID_PATTERN = /^(?:tl|post)-[0-9a-f]{12}$/` 只做**形状**校验，用来挡「手工构造的请求拿编辑表单当新建提交」这类情况，不做业务校验 —— 存在的意义是把「显然不像本系统生成的 id」拒在数据库之外，而不是判断这个 id 是否属于某人。
+
+### 7. 界面与表单的具体变化
+
+| 位置 | 改造前 | 改造后 |
+| --- | --- | --- |
+| `/admin/posts/new` 发布面板 | 可编辑的 slug 输入框 | 说明文字：「保存时自动生成（形如 post-3f9a2b1c5d7e），不需要填。生成后不会变，改标题也不影响已有链接。」 |
+| `/admin/posts/<slug>/edit` 发布面板 | 可编辑的 slug 输入框 | 只读展示当前 slug + 「由系统生成，不可修改（改网址会让已有链接失效）」 |
+| `/admin/timeline` 新建表单 | 必填的「节点 ID」输入框 | 无输入框 |
+| `/admin/timeline` 编辑表单 | 必填的「节点 ID」输入框 | hidden + 只读展示当前 ID |
+
+服务端对应两处：
+
+- `savePostAction` 里 `const slug = expectedVersion === null ? null : submittedSlug` —— 新建恒为 `null`（生成），编辑必须带回原值。若编辑态拿不到 slug 就返回「缺少文章标识，请刷新页面后重试。」，而不是悄悄当成新建。
+- `upsertPost` / `upsertTimelineItem` 的入参把 `slug` / `id` 改为 `string | null`，`null` 是「请生成」的唯一信号。
+
+`lib/admin/ids.ts` 是本次唯一新增的文件（54 行），只导出 `createPostSlug()` 与 `createTimelineId()`，内部共用 `randomHex(length)`（`randomBytes` 多取一字节再截断，不把长度写死成偶数假设）。文件头注释写明了上面四条设计理由，避免以后有人「优化」成标题转写。
+
+### 8. 两个实现层面的坑
+
+**① TypeScript 不认这种形式的 `never` 收窄。**
+
+```ts
+const fail = (code: string): never => redirect(withParam(returnTo, 'error', code))
+
+const savedId = result.id            // string | null
+if (!savedId) fail('generate_failed')
+// 下面 4 行全部报 TS2322 / TS2345：savedId 仍是 string | null
+```
+
+箭头函数自身的返回类型标注**不足以**让编译器把它当作 control-flow 断言。它只认带显式变量类型标注的断言函数（`const fail: (code: string) => never = ...`）。修法是让它走控制流返回值：
+
+```ts
+if (savedId === null) return fail('generate_failed')
+```
+
+没有改成给 `fail` 加显式类型标注，因为那会同时影响文件里的两处 `fail` 定义与全部调用点风格；`return fail(...)` 更直白，也让「这里确实会提前结束函数」在阅读时一眼可见。
+
+**② `const` 声明写在函数之后是合法的。**
+
+`ID_GENERATE_ATTEMPTS` 声明在 `upsertTimelineItem` 函数体之后。这是合法的：顶层 `const` 的暂时性死区只影响**声明之前执行的代码**，而函数体在调用时才求值。第一次读代码时容易误以为这是 bug —— 它不是，但值得在这里留一句，免得下次被「善意」地挪走。
+
+### 9. 一次「路由退化」的误报
+
+本轮构建后，终端里 `next build` 的输出把 `/timeline` 与 `/timeline/[id]` 显示成：
+
+```
+├ ƒ /timeline        6.45 kB   119 kB
+├ ƒ /timeline/[id]     128 B   121 kB
+```
+
+`ƒ` 是 Dynamic。公开内容页从 `○ Static` 变成 Dynamic 属于必须查明的问题 —— 但本轮改动只碰了后台文件。
+
+两条证据排除了它：
+
+- **源码侧**：`app/(site)/timeline/page.tsx` 没有 `export const dynamic`、不读 `searchParams`；`app/(site)/timeline/[id]/page.tsx` 有 `generateStaticParams`。按 Next 的判定规则，两者都不该是 Dynamic。
+- **原始字节对照**：用隔离副本构建 HEAD 做对照，然后直接读两份日志的字节：
+
+```
+39 92 3f 00 3c 92 3f 00   →   ├  ○     （U+251C, U+25CB = Static）
+```
+
+含本轮改动的构建与 HEAD 副本构建，timeline 两行的**状态字节完全相同**，都是 `├ ○`。
+
+结论：`ƒ` 是 **UTF-16LE → UTF-8 转码后图形字符在终端跨行叠印产生的显示伪影**，日志文件里从来不存在这个字符。**没有路由类型退化，不需要任何代码改动。**
+
+方法论：**日志里的可疑字符必须读原始字节确认，不能采信终端渲染结果。** `node … > log` 在 PowerShell 下产出 UTF-16LE 带 BOM；`Get-Content -Encoding utf8` 读会乱码；转码成 UTF-8 之后的图形字符仍可能在终端叠印成别的字形。这与早前「`getBoundingClientRect()` 对旋转元素返回外接包围盒」同源 —— **先确认你量的是不是你以为的那个量。**
+
+### 10. 验证
+
+`npm run typecheck = 0`；`npm run build = 0`（13/13 静态页）；`npm run db:migrate:dry = 0`（只列 `20261023000001_admin_password_login.sql`）；HEAD 隔离副本构建 `HEAD_BUILD = 0`，同样 13/13。
+
+真实浏览器验收（生产构建跑在 3100，无头 Edge + CDP，会话用探针专用环境变量注入）：
+
+| 断言 | 实测 |
+| --- | --- |
+| 新建文章页**可见** slug 输入框数量 | **0** |
+| 新建文章页页面含「自动生成」提示 | `true` |
+| 保存草稿后落到的路径 | `/admin/posts/post-83f57d70e773/edit` |
+| 生成的 slug | `post-83f57d70e773`（符合 `post-<12hex>`） |
+| 二次保存后路径 | `/admin/posts/post-83f57d70e773/edit` |
+| 二次保存后 slug 是否改变 | **未变** |
+| 新建时间轴节点**可见** ID 输入框数量 | **0** |
+| 旧文章 URL `/posts/playful-recorder` | 正常 |
+| 旧文章 URL `/posts/pan` | 正常 |
+| 生成后 `/timeline/<id>` 可访问 | 可访问（落库 id `tl-a3ac727196ad`，格式正确） |
+| 两个公开内容页的路由类型 | `/timeline` = `○ Static`、`/timeline/[id]` = `● SSG`（未退化） |
+
+时间轴节点 ID 不是在浏览器里读出来的：`/admin/timeline` 需要会话且内容需客户端渲染，探针用无 cookie 的 `Invoke-WebRequest` 复核时得到 307、`<code>` 扫描必然落空。改为用只读 SQL 直接核对落库结果确认创建成功 —— **这是探针取数方式的问题，不是产品缺陷。**
+
+验收产生的两行数据（`posts.slug = post-83f57d70e773`、`timeline_items.id = tl-a3ac727196ad`）已按精确条件 `delete` 清除，库回到 `posts = 2`（`pan`、`playful-recorder`）、`timeline_items = 0`。
+
+### 11. 未验证范围
+
+- 真实触屏、屏幕阅读器、Firefox / Safari 未测（仅 Chromium 无头 + CDP）。
+- 「12 位是否够短 / 够长」是算术估算，**没有做压力验证** —— 没有真的灌入百万行去测碰撞率。随机空间的计算是对的，工程上的量级判断是推断。
+- 时间轴**新建**走 `on conflict (id) do nothing`（撞了换一个），**编辑**仍走 `on conflict (id) do update`（乐观锁 + `coalesce` 保留首次发布时刻）。两条路径**没有做并发压测**，原子性由 PostgreSQL 的 `on conflict` 语义保证，不是由测试证明的。
+- 存量数据的 slug 没有被重新生成。`content/posts/playful-recorder.mdx` 的 frontmatter 里仍是 `slug: 'playful-recorder'`，`npm run db:import` 按 slug upsert，走的还是旧值。**生成规则只作用于后台新建路径，不作用于 MDX 导入路径** —— 这是刻意的（导入是「我有一份文件，它叫什么就是什么」），但意味着将来若想让文件导入也用随机 slug，需要另外设计。
+- `lib/content/schema.ts` 的 `postFrontmatterSchema` 仍要求 `slug` 必填，未随之放宽。同上，文件导入路径未变。
+- `RANDOM_HEX_LENGTH = 12` 与 `timeline/actions.ts` 里的 `GENERATED_ID_PATTERN = /^(?:tl|post)-[0-9a-f]{12}$/` 是**耦合的两个常量**，改一处必须同步另一处。没有为它们建立共享常量，因为分属「生成」与「校验」两个方向，合并成一个常量的收益小于它引入的间接层。
+- `posts_slug_check` 的格式约束没有随本次改动调整（仍是 `^[a-z0-9]+(?:-[a-z0-9]+)*$`）。生成值恰好符合它，所以不需要迁移；但这意味着**约束仍是唯一真正拦在数据库层的东西**，将来若改生成格式（比如加下划线）会在这里被拒。

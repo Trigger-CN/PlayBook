@@ -25,7 +25,8 @@ import { TIMELINE_STATUSES, TIMELINE_TYPES } from '@/lib/timeline/types'
  * 三种事件分开记而不是一律记 created：读者需要能分辨「新内容」与「改了旧内容」。
  */
 
-const ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+/** 编辑态回传的 ID 由服务端生成，只需约束成「看起来像 ID」即可，不做业务校验。 */
+const GENERATED_ID_PATTERN = /^(?:tl|post)-[0-9a-f]{12}$/
 
 /** 外部链接协议白名单（设计 11 §3.2：禁止 `javascript:`）。 */
 const SAFE_URL_PATTERN = /^https?:\/\//i
@@ -54,7 +55,8 @@ export async function saveTimelineAction(formData: FormData): Promise<void> {
   const returnTo = safeTimelinePath(String(formData.get('returnTo') ?? ''))
   const fail = (code: string): never => redirect(withParam(returnTo, 'error', code))
 
-  const id = String(formData.get('id') ?? '').trim()
+  // 新建时表单不带 ID（也没有输入框），服务端生成；编辑时带回原值。
+  const submittedId = String(formData.get('id') ?? '').trim()
   const title = String(formData.get('title') ?? '').trim() || null
   const content = String(formData.get('content') ?? '').trim()
   const type = String(formData.get('type') ?? '')
@@ -67,7 +69,8 @@ export async function saveTimelineAction(formData: FormData): Promise<void> {
   const expectedUpdatedAt = String(formData.get('expectedUpdatedAt') ?? '').trim() || null
 
   // 校验必须与数据库 check 约束一致，否则会在 SQL 层报错且信息不友好。
-  if (!ID_PATTERN.test(id) || id.length > 120) fail('bad_id')
+  const id: string | null = submittedId === '' ? null : submittedId
+  if (id !== null && (id.length > 120 || !GENERATED_ID_PATTERN.test(id))) fail('bad_id')
   if (content.length < 1 || content.length > 5000) fail('bad_content')
   if (!(TIMELINE_TYPES as readonly string[]).includes(type)) fail('bad_type')
   if (!(TIMELINE_STATUSES as readonly string[]).includes(status)) fail('bad_status')
@@ -93,6 +96,9 @@ export async function saveTimelineAction(formData: FormData): Promise<void> {
     expectedUpdatedAt,
   })
 
+  const savedId = result.id
+  if (savedId === null) return fail('generate_failed')
+
   // 版本戳不符：别人的修改已经落库，本次不覆盖。
   if (result.conflict) fail('conflict')
 
@@ -100,13 +106,13 @@ export async function saveTimelineAction(formData: FormData): Promise<void> {
     actorEmail: identity.email,
     action: result.created ? 'timeline_created' : 'timeline_updated',
     targetType: 'timeline_item',
-    targetId: id,
+    targetId: savedId,
     detail: { status, type },
   }).catch(() => {})
 
   await writeActivity({
     eventType: timelineSaveEventType(result.created),
-    target: { type: 'timeline_item', id },
+    target: { type: 'timeline_item', id: savedId },
     title: title ?? content.slice(0, 60),
   })
 
@@ -115,15 +121,15 @@ export async function saveTimelineAction(formData: FormData): Promise<void> {
   if (status === 'published' && result.previousStatus !== 'published') {
     await writeActivity({
       eventType: 'timeline_published',
-      target: { type: 'timeline_item', id },
+      target: { type: 'timeline_item', id: savedId },
       title: title ?? content.slice(0, 60),
-      dedupeKey: `timeline_published:${id}`,
+      dedupeKey: `timeline_published:${savedId}`,
     })
   }
 
-  for (const tag of timelineInvalidationTags(id)) revalidateTag(tag)
+  for (const tag of timelineInvalidationTags(savedId)) revalidateTag(tag)
   // 直连 pg 时只有按路径失效真正生效，原因见 lib/cache/tags 的说明。
-  for (const path of revalidateTimelinePaths(id)) revalidatePath(path)
+  for (const path of revalidateTimelinePaths(savedId)) revalidatePath(path)
   revalidatePath('/stats')
 
   redirect(withParam(returnTo, 'ok', result.created ? 'created' : 'updated'))
@@ -139,7 +145,7 @@ export async function changeTimelineStatusAction(formData: FormData): Promise<vo
   const id = String(formData.get('id') ?? '').trim()
   const status = String(formData.get('status') ?? '')
 
-  if (!ID_PATTERN.test(id)) fail('bad_id')
+  if (!GENERATED_ID_PATTERN.test(id)) fail('bad_id')
   if (!(TIMELINE_STATUSES as readonly string[]).includes(status)) fail('bad_status')
 
   const result = await setTimelineStatus(id, status)
@@ -187,7 +193,7 @@ export async function archiveTimelineAction(formData: FormData): Promise<void> {
 
   const returnTo = safeTimelinePath(String(formData.get('returnTo') ?? ''))
   const id = String(formData.get('id') ?? '').trim()
-  if (!ID_PATTERN.test(id)) redirect(withParam(returnTo, 'error', 'bad_id'))
+  if (!GENERATED_ID_PATTERN.test(id)) redirect(withParam(returnTo, 'error', 'bad_id'))
 
   const result = await setTimelineStatus(id, 'archived')
   if (!result.ok) redirect(withParam(returnTo, 'error', 'not_found'))

@@ -5,12 +5,7 @@ import { redirect } from 'next/navigation'
 
 import type { ActivityEventType } from '@/lib/activity/events'
 import { writeActivity } from '@/lib/admin/activity'
-import {
-  getPostForEdit,
-  postSlugExists,
-  setPostStatus,
-  upsertPost,
-} from '@/lib/admin/repository'
+import { getPostForEdit, setPostStatus, upsertPost } from '@/lib/admin/repository'
 import { recordAudit, requireAdmin } from '@/lib/auth/admin'
 import { cacheTags, postInvalidationTags, revalidatePostPaths } from '@/lib/cache/tags'
 import { renderMdx } from '@/lib/content/mdx'
@@ -30,9 +25,14 @@ import type { PostFormState } from './form-state'
  *    redirect 的唯一原因 —— redirect 会丢掉刚写的正文，而设计 15 §8 的
  *    验收标准明确要求「保存/发布失败不丢失正文」。返回状态让受控表单
  *    原地保留输入。
+ *
+ * ## slug 不由用户输入
+ *
+ * 表单里没有 slug 字段（决策 D-31）。新建时服务端生成一个 `post-<12位hex>`，
+ * 编辑时用隐藏字段带回原值作为定位条件。因此下面完全不再校验 slug 的格式 ——
+ * 它不再是「用户可能填错的东西」，而是「服务端自己产出的东西」。
  */
 
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const POST_STATUSES = ['draft', 'published', 'archived'] as const
 type PostStatus = (typeof POST_STATUSES)[number]
 
@@ -72,14 +72,12 @@ function parseTags(raw: string): string[] {
  * 保存前校验（设计 15 §3.4）。
  *
  * 必填项约束的是「发布」，不是「保存」：草稿允许只有标题的半成品，
- * 这正是草稿的意义。slug 例外——它终究会变成 URL，所以任何时候都要求
- * 合法（数据库的 posts_slug_check 反正也会拒绝非法值）。
+ * 这正是草稿的意义。
  *
  * 只返回第一条问题：一次列十条的清单在移动端会把表单挤出屏幕，
  * 而修完第一条再看到第二条的体验更顺。
  */
 async function validate(input: {
-  slug: string
   title: string
   summary: string
   cover: string | null
@@ -89,11 +87,6 @@ async function validate(input: {
   body: string
 }): Promise<{ field: string; message: string } | null> {
   if (input.title === '') return { field: 'title', message: '标题不能为空' }
-  if (input.slug === '') return { field: 'slug', message: 'slug 不能为空' }
-  if (!SLUG_PATTERN.test(input.slug)) {
-    return { field: 'slug', message: 'slug 只能是小写字母、数字与连字符，例如 hello-world' }
-  }
-  if (input.slug.length > 120) return { field: 'slug', message: 'slug 不能超过 120 个字符' }
 
   // 发布日期只要填了就必须是合法格式；草稿可以不填。
   if (input.publishedAt !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(input.publishedAt)) {
@@ -131,6 +124,9 @@ async function validate(input: {
  *   - `draft`   → 存成草稿
  *   - `publish` → 存成已发布
  *
+ * 新建时表单不带 slug（也没有 slug 输入框），服务端生成；编辑时隐藏字段带回
+ * 原 slug，仅作为定位条件，永远不会被写进 UPDATE 的 SET 里。
+ *
  * 成功时 redirect 到编辑页（带 `?ok=saved`）；失败时返回状态、原地保留输入。
  */
 export async function savePostAction(
@@ -143,7 +139,7 @@ export async function savePostAction(
   const rawIntent = text(formData, 'intent')
   const intent: PostStatus = rawIntent === 'publish' ? 'published' : 'draft'
 
-  const slug = text(formData, 'slug')
+  const submittedSlug = text(formData, 'slug')
   const title = text(formData, 'title')
   const summary = text(formData, 'summary')
   const cover = text(formData, 'cover') || null
@@ -161,21 +157,15 @@ export async function savePostAction(
     return { error: '版本戳不合法，请刷新页面后重试。', field: null }
   }
 
-  const problem = await validate({
-    slug,
-    title,
-    summary,
-    cover,
-    coverAlt,
-    status: intent,
-    publishedAt,
-    body,
-  })
-  if (problem) return { error: problem.message, field: problem.field }
-
-  if (expectedVersion === null && (await postSlugExists(slug))) {
-    return { error: `slug「${slug}」已被占用，请换一个`, field: 'slug' }
+  // 新建必须没有 slug、编辑必须有 slug：两者由 expectedVersion 是否为空决定。
+  // 这条判断是防「拿编辑表单当新建提交」这类手工构造请求，而不是防用户误操作。
+  const slug = expectedVersion === null ? null : submittedSlug
+  if (expectedVersion !== null && slug === null) {
+    return { error: '缺少文章标识，请刷新页面后重试。', field: null }
   }
+
+  const problem = await validate({ title, summary, cover, coverAlt, status: intent, publishedAt, body })
+  if (problem) return { error: problem.message, field: problem.field }
 
   const result = await upsertPost({
     slug,
@@ -200,14 +190,16 @@ export async function savePostAction(
         field: null,
       }
     }
-    return { error: '这个 slug 已被占用，请换一个', field: 'slug' }
+    return { error: '生成文章标识失败，请再点一次保存。', field: null }
   }
+
+  const savedSlug = result.slug
 
   await recordAudit({
     actorEmail: identity.email,
     action: result.created ? 'post_created' : 'post_updated',
     targetType: 'post',
-    targetId: slug,
+    targetId: savedSlug,
     detail: { status: intent, source: 'admin' },
   }).catch(() => {})
 
@@ -216,31 +208,31 @@ export async function savePostAction(
   const saveEvent: ActivityEventType = result.created ? 'post_created' : 'post_updated'
   await writeActivity({
     eventType: saveEvent,
-    target: { type: 'post', id: slug },
+    target: { type: 'post', id: savedSlug },
     title,
   })
 
   if (intent === 'published' && (result.created || result.previousStatus !== 'published')) {
     await writeActivity({
       eventType: 'post_published',
-      target: { type: 'post', id: slug },
+      target: { type: 'post', id: savedSlug },
       title,
-      dedupeKey: `post_published:${slug}`,
+      dedupeKey: `post_published:${savedSlug}`,
     })
   }
 
   // tag 失效留给将来改用 fetch/unstable_cache 缓存时用；
   // 当前直连 pg，真正生效的是按路径失效（见 lib/cache/tags 的说明）。
-  for (const tag of postInvalidationTags(slug, tags, category ?? undefined)) {
+  for (const tag of postInvalidationTags(savedSlug, tags, category ?? undefined)) {
     revalidateTag(tag)
   }
   revalidateTag(cacheTags.statsAdmin)
-  for (const path of revalidatePostPaths(slug)) {
+  for (const path of revalidatePostPaths(savedSlug)) {
     revalidatePath(path)
   }
   revalidatePath('/stats')
 
-  redirect(withParam(`/admin/posts/${encodeURIComponent(slug)}/edit`, 'ok', 'saved'))
+  redirect(withParam(`/admin/posts/${encodeURIComponent(savedSlug)}/edit`, 'ok', 'saved'))
 }
 
 /**
@@ -312,7 +304,6 @@ export async function changePostStatusAction(formData: FormData): Promise<void> 
     revalidatePath(path)
   }
   revalidatePath('/stats')
-
 
   redirect(withParam(returnTo, 'ok', nextStatus))
 }
