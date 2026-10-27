@@ -1,6 +1,10 @@
 import type { Metadata } from 'next'
 
 import './globals.css'
+// KaTeX 的排版样式。放在根布局是刻意的：它只定义公式的字体与盒子，
+// 不选任何颜色，与 5 色派生体系不冲突；字体文件由 CSS 里的 @font-face 引用，
+// 浏览器只在页面上真的出现公式时才会去下载对应的字形。
+import 'katex/dist/katex.min.css'
 
 import { resolvePaletteColors } from '@/config/palette'
 import { siteConfig } from '@/config/site'

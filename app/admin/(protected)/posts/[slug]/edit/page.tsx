@@ -44,7 +44,7 @@ export default async function EditPostPage({ params, searchParams }: Props) {
           {' · '}
           当前状态 {post.status === 'published' ? '已发布' : post.status === 'draft' ? '草稿' : '已归档'}
           {' · '}
-          正文来源 {post.source === 'admin' ? '后台编辑' : post.source === 'db' ? 'MDX 导入' : '文件'}
+          正文来源 {post.source === 'admin' ? '后台编辑' : post.source === 'db' ? '文件导入' : '文件'}
           {' · '}
           版本 {post.version}
         </p>
@@ -53,7 +53,7 @@ export default async function EditPostPage({ params, searchParams }: Props) {
             className="mt-2 rounded-xl border px-3 py-2 text-[12px] leading-relaxed"
             style={{ borderColor: 'var(--line)', background: 'var(--soft)' }}
           >
-            这篇正文目前由 MDX 文件导入。在下面保存一次后，来源会变成「后台编辑」，
+            这篇正文目前由 Markdown 文件导入。在下面保存一次后，来源会变成「后台编辑」，
             之后 <code>npm run db:import</code> 会跳过它，不再用文件覆盖你的修改。
           </p>
         ) : null}

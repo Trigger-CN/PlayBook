@@ -7,16 +7,21 @@ import { Icon } from '@/components/ui/icon'
 import { ToyButton } from '@/components/ui/toy-button'
 
 import { savePostAction } from './actions'
+import { PostBodyEditor } from './body-editor'
 import { EMPTY_POST_FORM_STATE, type PostFormState } from './form-state'
 
 /**
  * 文章编辑器（设计 15-post-editor）。
  *
- * ## 为什么是「原生表单 + 文本域」而不是富文本组件
+ * ## 正文为什么是源码编辑器 + 预览，而不是富文本画布（决策 D-32）
  *
- * 设计 15 §7 要求「Markdown 预览不是唯一编辑方式，文本区始终可用」。
- * 纯文本域天然满足这条，还保住浏览器自带的撤销、拼写检查、输入法与
- * 粘贴行为 —— 自制富文本最容易在这些地方出问题。
+ * 正文的权威格式是 Markdown 源码，要被服务端编译成 HTML。所见即所得的那类
+ * 编辑器把 Markdown 当导入导出格式，往返一次就会丢格式（公式、图表、代码块
+ * 语言标记、表格对齐），等于把可靠的数据格式换成不可靠的中间表示。
+ *
+ * 所以编辑的仍然是源码，但换掉了裸 textarea：CodeMirror 提供行号、括号匹配、
+ * 撤销、搜索，以及把结构问题直接标在行上的诊断通道。渲染结果由「预览」面板
+ * 承担，它走的是公开文章页同一个 processor —— 预览看到的就是发布后的样子。
  *
  * ## 为什么失败时必须原地返回状态（而不是 redirect）
  *
@@ -212,21 +217,24 @@ export function PostEditor({
           />
         </Field>
 
-        <Field
-          label="正文（MDX）"
-          htmlFor="post-body"
-          hint="支持 Markdown 与 GFM 表格；只有这个文本域，没有富文本工具栏。草稿允许不完整，发布时才做编译校验。"
-        >
-          <textarea
-            id="post-body"
-            name="body"
+        <div className="grid gap-2">
+          <p className="text-[12px] font-extrabold">正文（Markdown）</p>
+          <p className="text-[11px] leading-snug text-[var(--muted)]">
+            Markdown + GFM，支持 $行内公式$、$$公式块$$ 与 ```mermaid 图表。
+            结构问题会标在行号旁；草稿允许不完整，发布时才做编译校验。
+          </p>
+          {/*
+            隐藏字段承担表单提交：CodeMirror 是 contenteditable，不是表单控件，
+            它不会自己进入 FormData。body 仍然是受控的，隐藏字段只是把 state
+            同步成可提交的值。
+          */}
+          <input type="hidden" name="body" value={body} />
+          <PostBodyEditor
             value={body}
-            onChange={(event) => setBody(event.target.value)}
-            rows={22}
-            className="rounded-xl border px-3 py-2 font-mono text-[13px] leading-relaxed"
-            style={fieldStyle('body')}
+            onChange={setBody}
+            invalid={state.field === 'body'}
           />
-        </Field>
+        </div>
 
         {/* 窄屏：操作按钮跟在正文后面，不用滚回顶部 */}
         <div className="flex flex-wrap gap-2 lg:hidden">
@@ -372,7 +380,7 @@ export function PostEditor({
 
         <p className="text-[11px] leading-relaxed text-[var(--muted)]">
           保存后这篇正文的权威来源会标记为「后台编辑」，`npm run db:import`
-          会跳过它，不会用 MDX 文件覆盖你在网页上写的内容。
+          会跳过它，不会用 Markdown 文件覆盖你在网页上写的内容。
         </p>
 
         <Link href="/admin/posts" className="text-xs font-bold text-[var(--muted)] underline">

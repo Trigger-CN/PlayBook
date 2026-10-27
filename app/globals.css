@@ -441,7 +441,7 @@
 
 @layer components {
   /* --------------------------------------------------------------
-   * MDX 正文排版：阅读区保持平面，不在正文内使用按压反馈。
+   * 正文排版：阅读区保持平面，不在正文内使用按压反馈。
    * -------------------------------------------------------------- */
   .prose-playbook > :first-child {
     margin-top: 0;
@@ -550,6 +550,46 @@
   .prose-playbook h3 a {
     color: inherit;
     text-decoration: none;
+  }
+
+  /* --------------------------------------------------------------
+   * 公式与图表（决策 D-32）
+   *
+   * 只处理「盒子怎么放」，不定义颜色：KaTeX 的输出结构自带排版样式，
+   * 颜色继承正文的 --ink；mermaid 的画布颜色在初始化时按主题传进去。
+   * -------------------------------------------------------------- */
+  .prose-playbook .katex-display {
+    /* 长公式在窄屏上不能被裁掉，只能横向滚动。 */
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.35rem 0;
+  }
+
+  .prose-playbook pre.mermaid {
+    display: flex;
+    justify-content: center;
+    padding: 1rem;
+    background: var(--soft);
+    /* 图表比正文宽时允许横滚，不要撑破布局 */
+    overflow-x: auto;
+  }
+
+  /* 绘图失败时保留源码，并把它标成错误色 —— 看得见才改得动。 */
+  .prose-playbook pre.mermaid[data-mermaid-error='1'] {
+    display: block;
+    color: var(--coral);
+    white-space: pre-wrap;
+  }
+
+  /* 编辑器里被诊断标住的范围，只染下划线，不改字符颜色 */
+  .cm-lintRange-error {
+    text-decoration: underline wavy var(--coral);
+    text-underline-offset: 3px;
+  }
+
+  .cm-lintRange-warning {
+    text-decoration: underline wavy var(--muted);
+    text-underline-offset: 3px;
   }
 
   /* --------------------------------------------------------------

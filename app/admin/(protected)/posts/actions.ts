@@ -8,7 +8,7 @@ import { writeActivity } from '@/lib/admin/activity'
 import { getPostForEdit, setPostStatus, upsertPost } from '@/lib/admin/repository'
 import { recordAudit, requireAdmin } from '@/lib/auth/admin'
 import { cacheTags, postInvalidationTags, revalidatePostPaths } from '@/lib/cache/tags'
-import { renderMdx } from '@/lib/content/mdx'
+import { renderMarkdownToHtml } from '@/lib/content/markdown'
 import { estimateReadingTime } from '@/lib/content/repository'
 
 import type { PostFormState } from './form-state'
@@ -108,10 +108,10 @@ async function validate(input: {
   if (input.body.trim() === '') return { field: 'body', message: '正文不能为空' }
 
   try {
-    await renderMdx(input.body)
+    await renderMarkdownToHtml(input.body)
   } catch (error) {
     const detail = error instanceof Error ? error.message : '未知错误'
-    return { field: 'body', message: `MDX 编译失败：${detail}` }
+    return { field: 'body', message: `正文渲染失败：${detail}` }
   }
 
   return null

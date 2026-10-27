@@ -3260,3 +3260,156 @@ if (savedId === null) return fail('generate_failed')
 - `lib/content/schema.ts` 的 `postFrontmatterSchema` 仍要求 `slug` 必填，未随之放宽。同上，文件导入路径未变。
 - `RANDOM_HEX_LENGTH = 12` 与 `timeline/actions.ts` 里的 `GENERATED_ID_PATTERN = /^(?:tl|post)-[0-9a-f]{12}$/` 是**耦合的两个常量**，改一处必须同步另一处。没有为它们建立共享常量，因为分属「生成」与「校验」两个方向，合并成一个常量的收益小于它引入的间接层。
 - `posts_slug_check` 的格式约束没有随本次改动调整（仍是 `^[a-z0-9]+(?:-[a-z0-9]+)*$`）。生成值恰好符合它，所以不需要迁移；但这意味着**约束仍是唯一真正拦在数据库层的东西**，将来若改生成格式（比如加下划线）会在这里被拒。
+
+## D-32 正文编辑器改为 CodeMirror 源码编辑 + 实时检查 + LaTeX/Mermaid 渲染
+
+### 1. 需求
+
+原文：`再改进一下文章的正文编辑器，有没有行业内广泛使用的开源的富文本编辑器，包括对markdown实时检查，以及latex公式、mermaid实时渲染`
+
+拆成四件事：① 换掉裸 `<textarea>`；② 用业界通用的开源方案；③ 对 Markdown 做实时检查；④ LaTeX 与 Mermaid 要渲染，且是「实时」的。
+
+### 2. 直接结论：不是富文本编辑器，是源码编辑器
+
+**「富文本编辑器」与「Markdown 为唯一真相」在本项目里不能同时成立。**
+
+正文的权威格式是 Markdown 源码，服务端把它编译成 HTML。TipTap、Lexical、ProseMirror 这一层「文档模型 + 双向序列化」的编辑器，Markdown 只是它们的**导入导出格式**：加载时解析成文档树，保存时序列化回 Markdown。这个往返不是无损的 —— 公式的定界符风格、图表的围栏信息、表格对齐方式、代码块的语言标记、列表的松紧，都会在往返中被规范化成编辑器自己的偏好。对一个以源码为唯一真相的系统，那等于把可靠的数据格式换成了不可靠的中间表示。
+
+所以选的是 **CodeMirror 6**：它编辑的就是源码本身，光标、撤销、输入法、粘贴、查找全部走浏览器原生行为。这是 Markdown 源码编辑这一层里最通用的开源实现（Obsidian、Joplin、Replit 都是它），也是「业界广泛使用」这条要求最直接的回答。
+
+**「所见即所得」的诉求由预览面板承担**，而且预览是只读的 —— 它不会被误编辑改坏，也不参与存储。
+
+### 3. 一个必须先解决的冲突：MDX 与 LaTeX 不兼容
+
+改之前正文是 MDX（`next-mdx-remote` 的 `compileMDX`）。**MDX 把 `{` 当作 JS 表达式的起始符**，而 LaTeX 的 `\frac{a}{b}` 里到处是 `{a}` 这样的花括号。在 MDX 下，正文里的公式会被当成表达式求值，直接渲染失败。这个冲突没有折中方案：公式与 MDX 的表达式语法共用同一组定界符。
+
+同时发现：原来的 `renderMdx` **从来没有传入过 `components` 白名单**。也就是说 MDX 的 JSX 能力在本项目里一直是「装了但没接线」，只剩「构建期可以执行任意 JS」这一个副作用。放弃它的成本为零。
+
+于是正文渲染从 MDX 换成 **GFM Markdown + 白名单 rehype 插件**，`lib/content/mdx.ts` 删除，新增 `lib/content/markdown.ts`。`next-mdx-remote` 随之卸载（`removed 59 packages`，审计告警从 12 条降到 11 条）。
+
+**内容没有丢**：现有 MDX 里没有任何 JSX 标签、`import` 或 `export`（实测 `<[A-Z]` 0 条、`^\s*import\s` 0 条、`^\s*export\s` 0 条；唯一的 `{` 在 CSS 代码围栏内部）。换成 Markdown 之后行为不变，而内嵌 HTML 仍然可用（`rehype-raw`）。
+
+### 4. 依赖选择与一次真实的版本冲突
+
+最终新增 13 条直接依赖：
+
+| 用途 | 包 |
+| --- | --- |
+| 编辑器 | `codemirror@6.0.2`、`@codemirror/state`、`@codemirror/view`、`@codemirror/lang-markdown`、`@codemirror/lint` |
+| 管线 | `unified`、`remark-parse`、`remark-gfm`、`remark-math`、`remark-rehype`、`rehype-raw`、`rehype-stringify` |
+| 公式 | `rehype-katex`、`katex@^0.16.0` |
+| 图表 | `mermaid@^11` |
+
+**踩到的坑值得记下来。** 第一次装 `mermaid@12.2.0`，`npm install` 打了 5 段 `EBADENGINE` 警告 —— 它要求 `node >=22.12.0`，而本项目跑在 **Node 20.16.0**（`package.json` 声明 `>=20.9.0`）。降到 `mermaid@^11`（实装 11.17.2，无 `engines` 字段）之后，警告降到 1 段：`katex@0.19.1` 依赖 `commander@15.0.0`，同样要求 `>=22.12.0`。把 `katex` 降到 `^0.16.0` 之后警告才完全消失。
+
+`rehype-katex@7.0.1` 对 katex 的约束在 **`dependencies`**（`"katex": "^0.16.0"`）里，不是 `peerDependencies` —— 这一条查了它的 `package.json` 才确认。
+
+**验证方式不是「警告没了就算过」**：写了一个脚本递归扫描 `node_modules` 下全部 `package.json` 的 `engines.node`，机械判定有没有要求高于 20.16.0 的：
+
+```
+SCANNED=610   SKIPPED=1   BADCOUNT=0     （装 rehype-raw、卸 next-mdx-remote 之后）
+SCANNED=554   SKIPPED=1   BADCOUNT=0     （最终状态）
+```
+
+`SKIPPED=1` 跳过的是 `node_modules/next/dist/compiled/`（Next 自己的内嵌依赖，145 个子目录）。另用一段独立的 PowerShell 正则重扫交叉核验，`ALL_PKGJSON=610` 与 `BADCOUNT=0` 与脚本一致。
+
+**嵌套副本的不一致要留意**：顶层 `katex` 是 0.16.0，而 `rehype-katex`/`mermaid`/`micromark-extension-math` 各自嵌套了一份 0.16.47（它们的范围是 `^0.16.47`）。渲染用嵌套那份，客户端 CSS 用顶层那份。0.16.0 与 0.16.47 的 class 名一致（`.katex`、`.katex-display`、`.katex-html`），CSS 兼容；若将来出现新字符渲染异常，把顶层 `katex` 提到 `^0.16.47` 即可（同样无 `engines` 字段）。
+
+### 5. 渲染管线：公开页与预览必须是同一个 processor
+
+`lib/content/markdown.ts` 导出唯一的 `renderMarkdownToHtml(source)`，公开文章页与后台预览**都调它**。
+
+**为什么这件事不能省**：如果预览在客户端另写一套渲染，两边迟早会不一致，而「预览里好好的、发布后坏了」是最难查的一类问题。共用 processor 之后，「预览看到的就是发布后的样子」是结构保证，不是设计意图。
+
+插件顺序有硬约束：
+
+1. `rehypeRaw` 靠前 —— 否则正文里的原生 HTML 会被丢掉。
+2. `rehypeStripDangerous` 紧跟其后 —— 这是唯一能拦住 `<script>` 的位置（`rehype-raw` 刚把 HTML 解析成真实节点）。
+3. `rehypeMermaidFence` 必须在 `rehypePrettyCode` **之前** —— Shiki 不认识 `mermaid` 这个语言，会把它降级成无高亮的 `<pre><code>`，把客户端渲染要用的节点结构一起改掉。
+4. `rehypeKatex` 必须在 `remarkRehype` 之后 —— 它处理的是已经变成 `span.math-inline` / `div.math-display` 的 hast 节点。
+
+两个自写的 transformer：
+
+**`rehypeMermaidFence`** 把 ```mermaid 围栏换成 `<pre class="mermaid">源码</pre>`，只保留源码文本，**不预渲染成 SVG**。原因是 mermaid 需要真实的 DOM 与布局度量才能算节点尺寸；在 Node 里只能靠 jsdom，而且几 MB 的解析器会让每次构建都变慢。
+
+**`rehypeStripDangerous`** 是这次引入 `rehype-raw` 的配套代价。`rehype-raw` 会把 `<script>`、`<iframe>`、`onclick=` 原样保留到最终 HTML 里。本站的写作者就是站长本人，风险不高，但这属于「一旦发生就没有挽回余地」的一类问题，而拦住它只需要一份黑名单：拦 `script / iframe / object / embed / base / link / meta / style / form / input / button` 这些能执行与外联的标签，剥掉所有 `on*` 属性，并把 `href` / `src` 限制在 `http(s) / mailto / tel / # / 相对路径` 之内。排版类 HTML（`<div align>`、`<kbd>`、`<sup>`）不受影响。
+
+### 6. 实时检查：报「几乎确定是写错了」的问题
+
+`lib/content/markdown-lint.ts` 是纯函数，不依赖浏览器解析器，所以规则与线上编译时的行为能对得上。六类：
+
+| 检查 | 严重级 | 为什么值得报 |
+| --- | --- | --- |
+| 围栏代码块未闭合 | error | 后面的全部内容会被吞进代码块 |
+| `$$` 块级公式未配对 | error | 公式起止边界不明，渲染结果不可预期 |
+| 链接地址缺右括号 `](` | error | 链接会整段退化成纯文本 |
+| 图片缺替代文字 `![](…)` | warning | 无障碍要求，与封面 alt 同一条规则 |
+| 空 mermaid 图表块 | warning | 一定是个没写完的占位 |
+| h4–h6 标题 / 标题跳级 | warning | 目录只收 h2/h3；跳级是结构错误 |
+
+**刻意不做的事**：不猜行内公式的配对（`$a` 后面隔三个段落才出现 `b$`，任何启发式都会误报），也不做完整的 Markdown 语法校验。草稿允许是半成品，把「还没写完」报成错误会让诊断栏变成噪音 —— 而噪音会让人直接关掉它，那比没有诊断更糟。行内公式写错会在预览里直接显示成 KaTeX 的错误原文，看得见，不必再猜一遍。
+
+诊断走 CodeMirror 自己的 lint 通道：有问题的行直接被标上波浪线，不是另开一张清单。mermaid 的语法检查用 mermaid 自己的 `parse()`，只有正文里真的存在 mermaid 围栏时才会去加载那几 MB 的解析器。
+
+### 7. 界面与提交契约
+
+编辑器仍是三面板单栏结构，全部用 `ToyButton`（`variant`/`pressed`）：
+
+- **编辑**：CodeMirror（行号、括号匹配、撤销、搜索）+ 四个插入按钮（行内公式 / 公式块 / 图表 / 代码块）+ 行内诊断波浪线。
+- **预览**：停手 450ms 后调 `previewBody` Server Action，用同一个 processor 渲染；mermaid 在客户端画，并监听 `<html data-theme>` 重画（否则深色背景上会留着一张浅色主题的图）。
+- **检查**：一份可点击的清单，点一条就跳回对应行。
+
+**提交契约没有破**：CodeMirror 是 `contenteditable`，不是表单控件，它不会自己进入 `FormData`。所以保留一个 `<input type="hidden" name="body" value={body}>` —— `body` 仍然是受控 state（D-13 的「失败不丢稿」要求），隐藏字段只负责把它变成可提交的值。
+
+**预览为什么是 Server Action 而不是一条路由**：路由要额外处理 token、noindex 与鉴权三件事；一个 Action 天然继承当前会话，也不需要把未发布的正文暴露在任何可被索引的 URL 上（包括「`noindex` 但可抓取」这种半暴露）。Action 里同样独立调 `requireAdmin()`，不依赖 layout 守卫。
+
+### 8. 公开页的成本控制
+
+文章页仍然是**服务端渲染好 HTML 随 RSC 下发**，客户端只多一个 `MermaidRoot`：等 DOM 就位后把 `pre.mermaid` 画成图。首屏与 SEO 都不受影响，路由类型也没有退化。
+
+KaTeX 的 CSS 从 `app/layout.tsx` 引入（`import 'katex/dist/katex.min.css'`）。它只定义公式的字体与盒子，**不选任何颜色**，与 5 色派生体系不冲突；字体文件由 CSS 里的 `@font-face` 引用，浏览器只在页面上真的出现公式时才去下载对应字形。
+
+### 9. 验证
+
+`npm run typecheck = 0`；隔离副本生产构建 `BUILD=0`（13/13 静态页，`/posts/[slug]` 仍为 `● SSG`、`/timeline/[id]` 仍为 `● SSG`、`/timeline` 仍为 `○ Static`，**无路由类型退化**）。
+
+真实浏览器验收（无头 Edge + CDP，生产实例跑在 3100，探针环境变量注入）：
+
+| 断言 | 实测 |
+| --- | --- |
+| 新建文章页 `.cm-editor` 数量 | **1** |
+| `contenteditable` 的编辑器容器 | **1** |
+| 名为 `body` 的**可见**输入框 | **0**（`total=1, types=["hidden"]`） |
+| 名为 `slug` 的可见输入框 | **0** |
+| 三个面板按钮 + 四个插入按钮 | 全部存在 |
+| KaTeX 的 CSS 已进入文档 | **true** |
+| 输入未闭合围栏后的检查面板 | **1 条错误：第 20 行 这个代码块没有闭合** |
+| 行内诊断标记（`.cm-lintRange-*`） | **1** |
+| 预览：`.katex` 节点 | **2**（1 个行内 + 1 个 `.katex-display` 块级） |
+| 预览：mermaid `pre` → `svg` | **1 → 1**，`data-mermaid-error` **0** |
+| 预览：Shiki 代码高亮 | **2** 个 figure |
+| `/posts/playful-recorder` | h2 **2**、h3 **1**、table **1**、`pre code` **1**，标题正确 |
+| `/posts/pan` | 正文渲染正常 |
+| 首页 | 正常（触感面板、配色实验室、快捷入口均在） |
+
+截图三张（编辑器预览 / 公开文章页 / 首页）已由我本人逐张目视核对：行内公式 `E = mc²` 与块级 `\frac{a}{b} = c` 均正确排版，Mermaid 流程图（开始 → 结束）渲染为带箭头连线的 SVG，未闭合围栏那段被整段吃进代码块 —— 与诊断报告完全一致。
+
+**体积变化要说明**：`/admin/posts/new` 与 `/admin/posts/[slug]/edit` 的 First Load JS 从 108 kB 涨到 **334 kB**（CodeMirror + Mermaid 进入后台 bundle）。这是后台页面，只有管理员会访问；公开内容页的体积与路由类型都没有变化。Mermaid 本身是动态 `import()`，只有正文里真的出现图表时才下载。
+
+### 10. 未验证范围
+
+- 真实触屏、屏幕阅读器、Firefox / Safari 未测（仅 Chromium 无头 + CDP）。
+- **中文输入法未实测**。CodeMirror 走的是浏览器原生编辑行为，理论上比自制富文本更稳，但没有在真实 IME 下打过一段中文。
+- 移动端（390px）未实测。编辑器给了 `max-height: 58vh` 与横向滚动，但没有在真机上看过。
+- **大文档未压测**。诊断是全文扫描 + 600ms 防抖，几万字级别没有测过耗时；预览有 20 万字符的硬上限。
+- mermaid 的实际渲染依赖用户浏览器。图中字体、换行、复杂子图在极端情况下可能与预览有差异。
+- **KaTeX 与 Shiki 的样式是「借来的」**：KaTeX 的字体按它自己的设计，不参与 5 色体系；Shiki 用的是 `github-light` 主题。两者都没有跟随明暗主题切换，暗色模式下公式与代码块的底色仍是浅色（`keepBackground: false` 让代码块底色取 `--soft`，公式则是透明底）。这是刻意的取舍：让 KaTeX 跟随主题需要重写它的 CSS 变量，收益小于风险。
+- 语法高亮依赖 Shiki 的语言子集，未知语言会退化成无高亮代码块。
+- 存量文章没有回填任何公式或图表。`content/posts/playful-recorder.mdx` 正文未改动。
+- MDX 相关的**文件扩展名与导入脚本未改**：`content/posts/*.mdx` 仍叫 `.mdx`，`scripts/db-import-content.mjs` 仍接受 `.md`/`.mdx`。它们现在按 Markdown 解析，行为与之前一致，但文件名里的「mdx」已经是历史遗留。
+
+### 11. 一个值得记住的取舍
+
+**「富文本」是一类需求的名字，不是它的解法。** 用户要的是「写起来更顺手、看得见效果、公式图表能渲染」，这三件事分别对应编辑器、预览、渲染管线三个东西，没有一件要求把存储格式从源码换成文档树。反过来，真的换上富文本编辑器，第一个坏掉的恰恰是公式与图表 —— 它们在文档树里没有原生表示，只能塞进自定义节点，而自定义节点的 Markdown 序列化必然是本项目自己维护的一份私有格式。
+
+所以这里的选择不是「CodeMirror 比 TipTap 好」，而是：**当源码本身就是产品的数据格式时，编辑器应当编辑源码，而不是编辑它的某个投影。**

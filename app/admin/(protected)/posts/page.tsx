@@ -102,7 +102,7 @@ export default async function AdminPostsPage({ searchParams }: Props) {
           </Link>
         </div>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          共 {posts.length} 篇 · 后台编辑 {bySource.admin} 篇 · MDX 导入 {bySource.db} 篇
+          共 {posts.length} 篇 · 后台编辑 {bySource.admin} 篇 · 文件导入 {bySource.db} 篇
           {bySource.file > 0 ? ` · 文件 ${bySource.file} 篇` : ''}。
         </p>
       </header>
@@ -235,7 +235,7 @@ export default async function AdminPostsPage({ searchParams }: Props) {
                     className="border-b py-2.5 pr-3 text-[12px]"
                     style={{ borderColor: 'var(--line)' }}
                   >
-                    {post.source === 'admin' ? '后台编辑' : post.source === 'db' ? 'MDX 导入' : '文件'}
+                    {post.source === 'admin' ? '后台编辑' : post.source === 'db' ? '文件导入' : '文件'}
                   </td>
                   <td
                     className="border-b py-2.5 pr-3 text-[12px] text-[var(--muted)]"
@@ -307,8 +307,8 @@ export default async function AdminPostsPage({ searchParams }: Props) {
             <code>npm run db:import</code> 会跳过它，不会用文件覆盖。
           </li>
           <li>
-            2. <b>MDX 文件</b>：在 content/posts/ 下新建或修改 .mdx，然后
-            <code>npm run db:import</code> 同步进库，来源标记为「MDX 导入」。
+            2. <b>Markdown 文件</b>：在 content/posts/ 下新建或修改 .md/.mdx，然后
+            <code>npm run db:import</code> 同步进库，来源标记为「文件导入」。
           </li>
           <li>
             3. 一篇正文只有一个权威来源，由最后写入方决定；两种方式不会互相覆盖。

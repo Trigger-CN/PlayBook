@@ -5,10 +5,11 @@ import type { Metadata } from 'next'
 import { CommentSection } from '@/components/interactions/comment-section'
 import { LikeButton } from '@/components/interactions/like-button'
 import { ViewTracker } from '@/components/interactions/view-tracker'
+import { MermaidRoot } from '@/components/content/mermaid-root'
 import { Icon } from '@/components/ui/icon'
 import { ToyButton } from '@/components/ui/toy-button'
 import { getDataPorts } from '@/lib/data'
-import { renderMdx } from '@/lib/content/mdx'
+import { renderMarkdownToHtml } from '@/lib/content/markdown'
 import { extractToc } from '@/lib/content/toc'
 import { loadInteractionSnapshot } from '@/lib/interactions/snapshot'
 
@@ -59,8 +60,8 @@ export default async function PostDetailPage({ params }: { params: Params }) {
   if (!post) notFound()
 
   const { frontmatter, body, readingTime } = post
-  const [{ content }, toc, related, interactions] = await Promise.all([
-    renderMdx(body),
+  const [content, toc, related, interactions] = await Promise.all([
+    renderMarkdownToHtml(body),
     Promise.resolve(extractToc(body)),
     ports.posts.list({ tag: frontmatter.tags[0], pageSize: 3 }),
     loadInteractionSnapshot('post', frontmatter.slug),
@@ -121,7 +122,10 @@ export default async function PostDetailPage({ params }: { params: Params }) {
             </figure>
           ) : null}
 
-          <div className="prose-playbook text-base leading-[1.85]">{content}</div>
+          <MermaidRoot
+            html={content}
+            className="prose-playbook text-base leading-[1.85]"
+          />
 
           {/* 互动区：点赞 + 浏览量说明 */}
           <div className="mt-8 flex flex-wrap items-center justify-between gap-4">

@@ -48,7 +48,7 @@ export default async function NewPostPage({ searchParams }: Props) {
       <header className="mb-5">
         <h1 className="font-display text-2xl">新建文章</h1>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          正文用 MDX 书写。保存草稿随时可以；发布前会做一次编译校验。
+          正文用 Markdown 书写。支持 $公式$、$$公式块$$ 与 mermaid 图表；保存草稿随时可以，发布前会做一次渲染校验。
         </p>
       </header>
 
