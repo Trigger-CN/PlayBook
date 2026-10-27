@@ -15,6 +15,8 @@
  * 只打印主机名与库名以便排查。
  */
 
+import './lib/load-env.mjs'
+
 import process from 'node:process'
 
 import pg from 'pg'

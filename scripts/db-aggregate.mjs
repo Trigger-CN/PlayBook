@@ -11,6 +11,8 @@
  * 因此可以安全地在 cron 里重跑，也可以用来修正迟到事件。
  */
 
+import './lib/load-env.mjs'
+
 import process from 'node:process'
 
 import pg from 'pg'

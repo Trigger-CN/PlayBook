@@ -17,6 +17,8 @@
  * - frontmatter 非法时直接失败并指出文件，绝不静默跳过（module 03 §3）。
  */
 
+import './lib/load-env.mjs'
+
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'

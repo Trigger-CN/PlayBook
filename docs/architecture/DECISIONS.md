@@ -3013,3 +3013,82 @@ React 19 在 `<form action={fn}>` 提交后会自动重置非受控字段。口�
 - 口令强度没有服务端校验 —— `INTERACTION_HASH_SALT` 若被填成短串，登录依然接受。这是刻意的：它是部署者自己的凭据，加最小长度门槛只会让人把短串改成短串加点号的更差做法。生产部署应使用足够长的随机串。
 - 多实例部署时内存限流各自独立计数（已知局限，与 `lib/interactions/rate-limit.ts` 的既有说明一致）。
 - 没有口令轮换、没有多用户、没有「找回口令」。用户明确只要求单人账号口令登录，这些不在范围内。
+
+## D-30 `scripts/` 下的工具必须自己加载 `.env.local`
+
+### 1. 症状与误判
+
+换一台电脑部署，按文档配好 `.env.local`，`npm run dev` 首页与文章页都正常。但访问任何真正读库的页面（首页文章列表）报：
+
+```
+Error: [db] 查询失败：relation "public.posts" does not exist
+```
+
+第一反应是「代码里的表名写错了」。实际不是：`lib/data/adapters/postgres.ts` 第 162 行与第 172 行写的都是 `from public.posts`，schema 限定名完整、拼写正确。
+
+真正的原因是**那个库从来没跑过迁移**，`public` schema 是空的。`posts` 不存在不是因为名字错，是因为表根本没建。
+
+### 2. 为什么迁移没跑成
+
+关键事实：**Node 不会自动加载 `.env.local`**，那是 Next.js 的运行时行为。
+
+`scripts/` 下的工具（`db-migrate.mjs`、`db-import-content.mjs`、`db-aggregate.mjs`、`db-health.mjs`、`db-setup.mjs`）都是 `node scripts/xxx.mjs` 直接跑，走纯 Node，看不到 `.env.local`。修复前 `scripts/` 里对 `--env-file`、`dotenv`、`loadEnvFile` 的检索命中数都是 **0**。
+
+于是形成一条很隐蔽的失效链：
+
+| 步骤 | 用户看到 | 实际情况 |
+| --- | --- | --- |
+| 配好 `.env.local` | 「配置完成」 | — |
+| `npm run dev` | 页面正常 | Next 加载了 `.env.local`，连上库 |
+| `npm run db:migrate` | `[migrate] 缺少 DATABASE_URL。示例：postgres://user:pass@127.0.0.1:5432/playbook` | 纯 Node 读不到那个文件 |
+| 以为「配置有问题」但配置明明对 | 卡住 | 错误信息把人指向一个已经配好的文件 |
+| 跳过迁移直接跑 dev | 首页 500 | 连上了一个空库 |
+
+**错误信息指向了错误的排查方向**，这比报错本身更贵。实测复现：在没有任何 `DATABASE_URL` 环境变量的全新 shell 里跑 `npm run db:migrate:dry`，修复前 `退出码 1` + 「缺少 DATABASE_URL」；修复后 `退出码 0` + 正常列出 `将执行 20261023000001_admin_password_login.sql`。
+
+### 3. 修法：`scripts/lib/load-env.mjs`
+
+一个 66 行的模块，被 5 个脚本在 import 区首位副作用引入：
+
+```
+import './lib/load-env.mjs'
+```
+
+它按 Next.js 的优先级顺序尝试 `.env.<NODE_ENV>.local` → `.env.local` → `.env.<NODE_ENV>` → `.env`，逐行解析 `KEY=VALUE` 后写入 `process.env`。
+
+三条边界是刻意设计的：
+
+1. **不覆盖已有环境变量**。CI 里显式传入的值必须胜过文件内容，否则「本地能跑、CI 跑错库」这类问题会回来。
+2. **不打印任何东西**。连键名都不打印 —— 日志里不该出现配置指纹。
+3. **文件不存在是正常的**，静默跳过。首次克隆、CI 环境都没有 `.env.local`，不能因此报错。
+
+### 4. 两个解析细节
+
+**引号内的值不剥注释**：口令、连接串里可能有 `#`。所以成对引号包裹的值只去引号、不处理注释；只有未加引号的值才把「空格 + `#`」之后当注释。这与 dotenv 的习惯一致。
+
+**`NODE_ENV=test` 时跳过 `.env.local`**：与 Next.js 的行为对齐，避免测试跑在开发者本地库上。
+
+### 5. 验证
+
+| 断言 | 修复前 | 修复后 |
+| --- | --- | --- |
+| 全新 shell（无 `DATABASE_URL`）跑 `db:migrate:dry` 退出码 | `1` | **`0`** |
+| 输出 | `[migrate] 缺少 DATABASE_URL` | `[migrate] 目标数据库：自建 PostgreSQL` + `将执行 20261023000001_admin_password_login.sql` |
+| 5 个脚本 `node --check` | — | 全部 `0` |
+| `load-env.mjs` 语法 | — | `0` |
+| 改动范围 | — | 5 个脚本各 +2 行，新增 1 个文件 |
+
+### 6. 方法论教训
+
+**「配置好了」和「这条命令读到了配置」是两件事。**
+
+排查时我一开始也在怀疑表名、schema、代码。真正定位靠的是一次对照实验：在**同一台机器、同一个项目**上，从环境变量里拿走 `DATABASE_URL` 后重跑同一个命令。如果它在「配置明明存在」的情况下依然报缺配置，那就说明它压根没读那个配置文件 —— 这是唯一能区分「配置错」与「读取路径错」的办法。
+
+以后凡是「文档说配这里、命令说不认识」的分歧，都应该先做这个对照，而不是先读配置内容。
+
+### 7. 未验证范围
+
+- 未在 Linux / macOS 下跑过（`readFileSync` + `path.join` 是平台无关的，但没有实测）。
+- 未验证含 `\r\n` 的 `.env.local`（解析用了 `split(/\r?\n/)`，理论上覆盖，但没有实测样本）。
+- 未验证带 BOM 的 `.env.local`。若首个键名带 BOM，正则 `/^[A-Za-z_][A-Za-z0-9_]*$/` 会拒绝该行，表现为「这个键没生效」而不是报错。这是有意的保守行为，不是遗漏。
+- 未处理多行值（`KEY="line1\nline2"`）。当前项目的 env 都是单行。

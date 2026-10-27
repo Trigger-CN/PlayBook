@@ -27,6 +27,8 @@
  *     任何部署环境都必须换成真实强口令（并设置 DATABASE_SSL）。
  */
 
+import './lib/load-env.mjs'
+
 import { spawn, execFile } from 'node:child_process'
 import { access, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import net from 'node:net'

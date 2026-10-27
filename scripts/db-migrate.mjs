@@ -16,6 +16,8 @@
  * - 迁移在 supabase/ 下而不在 db/ 下，是为了让 Supabase CLI 与自建脚本共用同一份 SQL。
  */
 
+import './lib/load-env.mjs'
+
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import process from 'node:process'
