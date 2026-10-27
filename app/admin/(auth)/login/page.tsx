@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
 
+import { safeAdminRedirect } from '@/lib/auth/admin'
+
 import { LoginForm } from './login-form'
 
 /**
@@ -7,13 +9,25 @@ import { LoginForm } from './login-form'
  *
  * 独立布局，不渲染后台外壳，也不展示任何后台信息或统计。
  * noindex,nofollow；robots 另外禁止抓取 /admin。
+ *
+ * 回跳地址在这里先过一道 safeAdminRedirect：即便 `?next=` 被手动改成
+ * `//evil.com` 或 `https://evil.com`，落到表单里的也只是 /admin。
+ * 服务端 Action 收到后仍会再校验一次 —— 这一层只保证「表单里没有脏数据」。
  */
 export const metadata: Metadata = {
   title: '管理员登录',
   robots: { index: false, follow: false },
 }
 
-export default function AdminLoginPage() {
+export default async function AdminLoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string | string[] }>
+}) {
+  const params = await searchParams
+  const rawNext = params.next
+  const next = safeAdminRedirect(typeof rawNext === 'string' ? rawNext : null)
+
   return (
     <main className="grid min-h-screen place-items-center px-4 py-10">
       <div className="w-full max-w-[420px]">
@@ -32,16 +46,16 @@ export default function AdminLoginPage() {
         >
           <h1 className="font-display text-2xl">管理员登录</h1>
           <p className="mt-2 text-sm leading-relaxed text-[var(--muted)]">
-            输入管理员邮箱获取一次性登录链接。本站不保存密码。
+            用管理员邮箱与部署口令登录。口令只在服务端校验，数据库不保存它。
           </p>
 
-          <LoginForm />
+          <LoginForm next={next} />
         </div>
 
         <ul className="mt-5 grid gap-1.5 text-xs leading-relaxed text-[var(--muted)]">
-          <li>· 登录链接 15 分钟内有效，且只能使用一次。</li>
-          <li>· 只有 ADMIN_EMAIL 白名单内的邮箱可以获得会话。</li>
-          <li>· 未授权访问不会透露后台内容。</li>
+          <li>· 只有管理员邮箱名单内的账号可以登录。</li>
+          <li>· 连续失败会被临时限流，稍后再试即可。</li>
+          <li>· 会话 7 天有效，可随时从后台退出。</li>
         </ul>
       </div>
     </main>

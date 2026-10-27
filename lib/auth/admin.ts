@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 
 import { cookies } from 'next/headers'
 
@@ -8,23 +8,31 @@ import { hashValue } from '@/lib/interactions/server-context'
 import { query, queryOne } from '@/lib/db/query'
 
 /**
- * 管理员认证（自建库过渡实现，设计 08 §3 / 16 §3）。
+ * 管理员认证（邮箱 + 环境变量口令，设计 08 §3 / 16 §3）。
  *
- * 安全约定（逐条对应设计文档）：
- * - 不自建密码存储：登录走「邮箱 → 一次性令牌链接」，与魔法链接等价。
- * - 令牌与会话只存哈希，不存明文。
- * - 会话在服务端校验；`requireAdmin()` 供页面、Server Action、Route Handler 统一调用。
- * - 白名单来自环境变量 ADMIN_EMAIL，不写死在数据库。
+ * ## 口令为什么不落库
+ *
+ * 账号来自 env 的 ADMIN_EMAIL，口令来自 env 的 INTERACTION_HASH_SALT，
+ * 服务端每次登录现算现比。数据库里既没有口令也没有口令哈希，因此「拖库」
+ * 这条路径根本不产出可用凭据 —— 这比「存哈希再校验」更强，也顺带满足了
+ * 设计里「不自建密码存储」的原始约束。
+ *
+ * 代价必须说清：改口令 = 改环境变量 + 重启；没有「找回口令」，也没有按时
+ * 轮换的机制。单人后台这样取舍是可接受的，多人场景应换成真正的身份提供方。
+ *
+ * ## 其余约定
+ *
+ * - 会话只存哈希，可单独撤销；`requireAdmin()` 供页面、Server Action、
+ *   Route Handler 统一调用。
+ * - 登录失败不区分「邮箱不在名单」与「口令错误」，避免把登录接口变成
+ *   账号探测器。
  * - 重定向只允许同源白名单后台路径，防开放重定向。
- *
- * 将来切 Supabase Auth 时，只需替换本文件与登录页，页面调用 requireAdmin() 的方式不变。
  */
 
 export const ADMIN_SESSION_COOKIE = 'playbook-admin'
 
-/** 会话有效期 7 天；令牌有效期 15 分钟。 */
+/** 会话有效期 7 天。 */
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000
-const TOKEN_TTL_MS = 15 * 60 * 1000
 
 export type AdminIdentity = {
   email: string
@@ -39,12 +47,22 @@ function adminAllowlist(): string[] {
 }
 
 /**
- * 是否配置了管理员白名单。
- * 未配置时后台整体不可用 —— 这比「默认放行」安全：
+ * 管理员口令。
+ *
+ * 复用互动哈希盐而不是再引入一个必填变量：部署里少一个可能漏配的地方。
+ * 该值为空时后台整体关闭 —— 绝不允许「口令为空即放行」。
+ */
+function adminPassword(): string {
+  return (process.env.INTERACTION_HASH_SALT ?? '').trim()
+}
+
+/**
+ * 后台是否可用：需要同时具备账号与口令。
+ * 缺任何一个都整体关闭，这比「默认放行」安全：
  * 忘记配置环境变量不应该导致任何人都能进后台。
  */
 export function isAdminConfigured(): boolean {
-  return adminAllowlist().length > 0
+  return adminAllowlist().length > 0 && adminPassword().length > 0
 }
 
 export function isAllowedAdminEmail(email: string): boolean {
@@ -53,82 +71,58 @@ export function isAllowedAdminEmail(email: string): boolean {
   return adminAllowlist().includes(normalized)
 }
 
-function generateSecret(): string {
-  // 32 字节随机数，base64url 后长度 43，符合 admin_*_hash_check 的长度要求。
-  return randomBytes(32).toString('base64url')
+/** 把任意长度输入压成定长摘要，使比较与输入长度无关。 */
+function digest(value: string): Buffer {
+  return createHash('sha256').update(value, 'utf8').digest()
 }
 
-/** 恒定时间比较，避免通过响应时间推测令牌。 */
-function safeEqualHex(left: string, right: string): boolean {
-  const a = Buffer.from(left, 'utf8')
-  const b = Buffer.from(right, 'utf8')
-  if (a.length !== b.length) return false
-  return timingSafeEqual(a, b)
+/** 恒定时间比较：两侧都先过摘要，长度恒为 32 字节，timingSafeEqual 不会抛。 */
+function safeEqualSecret(left: string, right: string): boolean {
+  return timingSafeEqual(digest(left), digest(right))
 }
 
 // ---------------------------------------------------------------------------
-// 登录令牌
+// 口令校验
 // ---------------------------------------------------------------------------
 
-/**
- * 创建一次性登录令牌，返回明文令牌（只在这一次返回，之后只存哈希）。
- * 调用方负责把明文拼进链接并「发送」出去。
- */
-export async function createLoginToken(
-  email: string,
-  ipHash: string | null,
-): Promise<{ token: string; expiresAt: string }> {
-  const token = generateSecret()
-  const expiresAt = new Date(Date.now() + TOKEN_TTL_MS)
-
-  await query(
-    `insert into public.admin_login_tokens (email, token_hash, expires_at, ip_hash)
-     values ($1, $2, $3, $4)`,
-    [email.trim().toLowerCase(), hashValue(`admin-token:${token}`), expiresAt.toISOString(), ipHash],
-  )
-
-  return { token, expiresAt: expiresAt.toISOString() }
-}
+export type CredentialCheck =
+  | { ok: true; email: string }
+  | { ok: false; reason: 'unavailable' | 'denied' }
 
 /**
- * 兑换令牌，成功则创建会话并返回会话明文令牌。
- * 失败返回 null（不区分「不存在」「已用过」「已过期」，避免泄漏状态）。
+ * 校验账号口令。
+ *
+ * 两项判断都算完再合并，不因「邮箱不在名单」提前返回 —— 提前返回会让
+ * 响应时间变成「该邮箱是否为管理员」的旁路。
  */
-export async function consumeLoginToken(
-  token: string,
-): Promise<{ email: string; sessionToken: string } | null> {
-  const tokenHash = hashValue(`admin-token:${token}`)
+export function verifyAdminCredentials(email: string, password: string): CredentialCheck {
+  if (!isAdminConfigured()) return { ok: false, reason: 'unavailable' }
 
-  // 用「未使用且未过期」作为条件更新，把一次性语义交给数据库，避免并发双花。
-  const row = await queryOne<{ email: string }>(
-    `update public.admin_login_tokens
-        set used_at = now()
-      where token_hash = $1
-        and used_at is null
-        and expires_at > now()
-      returning email`,
-    [tokenHash],
-  )
-  if (!row) return null
+  const normalized = email.trim().toLowerCase()
+  const emailMatches = isAllowedAdminEmail(normalized)
+  const passwordMatches = safeEqualSecret(password, adminPassword())
 
-  // 兑换后再校验白名单：即使令牌泄露，非管理员邮箱也拿不到会话。
-  if (!isAllowedAdminEmail(row.email)) return null
-
-  const sessionToken = generateSecret()
-  const expiresAt = new Date(Date.now() + SESSION_TTL_MS)
-
-  await query(
-    `insert into public.admin_sessions (email, token_hash, expires_at)
-     values ($1, $2, $3)`,
-    [row.email, hashValue(`admin-session:${sessionToken}`), expiresAt.toISOString()],
-  )
-
-  return { email: row.email, sessionToken }
+  if (emailMatches && passwordMatches) return { ok: true, email: normalized }
+  return { ok: false, reason: 'denied' }
 }
 
 // ---------------------------------------------------------------------------
 // 会话
 // ---------------------------------------------------------------------------
+
+/** 建立会话，返回写入 cookie 用的明文令牌（库中只存哈希）。 */
+export async function createAdminSession(email: string): Promise<string> {
+  const sessionToken = randomBytes(32).toString('base64url')
+  const expiresAt = new Date(Date.now() + SESSION_TTL_MS)
+
+  await query(
+    `insert into public.admin_sessions (email, token_hash, expires_at)
+     values ($1, $2, $3)`,
+    [email, hashValue(`admin-session:${sessionToken}`), expiresAt.toISOString()],
+  )
+
+  return sessionToken
+}
 
 /** 写入会话 cookie。httpOnly，生产环境 secure。 */
 export async function setAdminSessionCookie(sessionToken: string): Promise<void> {
@@ -172,7 +166,7 @@ export async function getAdminIdentity(): Promise<AdminIdentity | null> {
   if (!row) return null
 
   // 恒定时间比较，避免哈希比较本身成为旁路。
-  if (!safeEqualHex(row.token_hash, tokenHash)) return null
+  if (!safeEqualSecret(row.token_hash, tokenHash)) return null
 
   // 白名单可能在会话有效期内被改（例如撤销某个管理员）。
   if (!isAllowedAdminEmail(row.email)) return null

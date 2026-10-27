@@ -31,16 +31,16 @@
 
 ### 3.1 认证
 
-- 使用 Supabase Auth 管理会话。
-- MVP 可限制到 `ADMIN_EMAIL` 或管理员角色表。
-- 支持魔法链接或受控 OAuth；不自建密码存储。
+- 会话由自建库 `admin_sessions` 管理（只存哈希）；将来切 Supabase Auth 时替换 `lib/auth/` 即可。
+- 账号限制到环境变量 `ADMIN_EMAIL` 白名单。
+- 登录方式为邮箱 + 部署口令，口令来自 `INTERACTION_HASH_SALT`，不落库；失败文案统一，防账号枚举。
 - 登录成功只允许跳回同源、白名单后台路径，防止开放重定向。
 
 ### 3.2 权限守卫
 
 - Middleware 仅做快速会话检查；每个 Server Action/Route Handler 再做服务端授权。
 - 未登录跳转 `/admin/login?next=...`。
-- 已登录但无管理员角色返回 403，不显示后台框架。
+- 已登录但账号不在白名单返回 403，不显示后台框架。
 - 服务端密钥只在 server-only 模块使用。
 
 ### 3.3 会话与账户
@@ -68,23 +68,23 @@
 ## 4. 状态设计
 
 - **Checking session**：避免先渲染后台再闪回登录。
-- **Login sending**：锁定提交，保持按钮宽度。
-- **Invalid/expired link**：清楚说明并允许重新发送。
+- **Login submitting**：锁定提交，保持按钮宽度。
+- **Login denied**：统一失败文案，不区分账号错与口令错。
 - **Forbidden**：显示无权限，不泄漏资源内容。
 - **Session expired**：模态或页面提示重新认证，不静默丢失操作。
 - **Navigation pending**：页面标题区提供轻量进度，不遮挡全页。
 
 ## 5. 数据与安全边界
 
-- Supabase `auth.users` 保存身份；管理员授权来源可为环境变量或 `profiles.role`。
+- 身份由环境变量 `ADMIN_EMAIL` 指定；管理员授权来源可为该白名单或 `profiles.role`。
 - 客户端只使用 anon key；service role 永不下发。
 - 所有后台表开启 RLS，管理员策略不能仅靠隐藏 UI。
 - 记录重要后台操作审计事件：审核、删除、发布、设置变更。
 
 ## 6. 实现技术要点
 
-- 使用 `app/admin/layout.tsx` 作为受保护 Server Component 外壳。
-- `middleware.ts` 刷新 Supabase session cookie，但最终权限在服务端函数校验。
+- 守卫放在 `app/admin/(protected)/layout.tsx`，只覆盖需要会话的后台页面；`(auth)` 组保持匿名可达，避免登录页被自己的守卫挡住。
+- `middleware.ts` 只检查会话 cookie 是否存在，最终权限在服务端函数校验。
 - 创建 `requireAdmin()` server-only helper，供页面、Action 和 Handler 统一调用。
 - 后台导航可为 Server Component；抽屉、账户菜单为小型 Client Component。
 - 每个后台路由提供 `loading.tsx`、`error.tsx`；权限错误使用专门边界。
@@ -100,7 +100,7 @@
 
 ## 8. 验收标准
 
-- 未登录和非管理员无法访问任一后台页面或接口。
+- 未登录和账号不符无法访问任一后台页面或接口。
 - 会话刷新、退出和过期处理正确。
 - 桌面/移动导航可操作，当前路由标记正确。
 - 后台不暴露 service role、敏感统计或未授权内容。

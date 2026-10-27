@@ -33,8 +33,8 @@ ADMIN_EMAIL="你的邮箱"
 | 变量 | 作用 | 留空的后果 |
 | --- | --- | --- |
 | `DATABASE_URL` | 连接串 | 整站回退到文件/种子模式，互动功能不可用 |
-| `INTERACTION_HASH_SALT` | 把 IP / UA / 邮箱变成不可逆哈希 | 用进程内随机盐：不泄漏原始值，但**每次重启后哈希都不同**，限流与去重效果重置 |
-| `ADMIN_EMAIL` | 管理员白名单，逗号分隔 | **整个后台关闭**（刻意的安全默认值） |
+| `INTERACTION_HASH_SALT` | 把 IP / UA / 邮箱变成不可逆哈希；**同时就是后台登录口令** | 用进程内随机盐：不泄漏原始值，但**每次重启后哈希都不同**，限流与去重效果重置；后台也同时关闭（没有口令） |
+| `ADMIN_EMAIL` | 后台登录账号，逗号分隔可写多个 | **整个后台关闭**（刻意的安全默认值） |
 
 生成随机盐：
 
@@ -98,7 +98,7 @@ PGPORT=5433 npm run db:setup     # Windows PowerShell: $env:PGPORT=5433; npm run
 
 **改了 MDX 但页面没变** —— 有数据库时文章正文读的是 `posts.body`，不是文件。跑 `npm run db:import`。这是刻意的设计：让页面同时猜两个来源会制造「改了文件但页面没变」的静默不一致。
 
-**评论提交后看不到** —— 新评论默认 `pending`，需要在 `/admin/comments` 审核通过。后台需要 `ADMIN_EMAIL` 且库里有 `admin_sessions` 会话。
+**评论提交后看不到** —— 新评论默认 `pending`，需要在 `/admin/comments` 审核通过。后台需要 `ADMIN_EMAIL` 与 `INTERACTION_HASH_SALT` 才能登录，会话记在 `admin_sessions`。
 
 ---
 

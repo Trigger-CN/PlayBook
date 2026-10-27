@@ -281,7 +281,7 @@ components/interactions/comment-section.tsx 不做乐观插入，字段级错误
 ```
 
 - 访客标识：`httpOnly` cookie `playbook-visitor`，32 字符 hex，一年有效，生产环境 `secure`；服务端仍按正则校验。
-- 哈希：`sha256(salt + value)`，盐来自 `INTERACTION_HASH_SALT`，未配置时用**进程内随机盐**（不泄漏原始值，但重启后去重与限流效果重置）。前缀区分用途：`ip:`、`ua:`、`email:`、`admin-token:`、`admin-session:`。
+- 哈希：`sha256(salt + value)`，盐来自 `INTERACTION_HASH_SALT`，未配置时用**进程内随机盐**（不泄漏原始值，但重启后去重与限流效果重置）。前缀区分用途：`ip:`、`ua:`、`email:`、`admin-session:`。
 - 不存明文 IP，只存加盐哈希；`referrer` 只保留 `origin`。评论邮箱只存哈希且不对外暴露。
 - 点赞幂等：`insert ... on conflict (target_type, target_id, visitor_id) do nothing`，冲突视作幂等成功并返回权威计数。
 - 浏览量去重：由 `record_page_view` 在单条语句内完成 30 分钟窗口去重，不在应用层「先查后写」。
@@ -324,10 +324,10 @@ scripts/db-aggregate.mjs          每日聚合 / 回填
 ## 12. 管理后台
 
 ```text
-lib/auth/admin.ts               一次性令牌登录 + 会话（只存哈希）+ safeAdminRedirect + 审计
+lib/auth/admin.ts               口令校验（邮箱 + 环境变量口令）+ 会话（只存哈希）+ safeAdminRedirect + 审计
 lib/admin/repository.ts        后台独立仓储（能看全状态，不复用公开端口）
 app/admin/layout.tsx           Server Component 守卫，不渲染任何后台内容即鉴权
-app/admin/login/*              请求链接 / 兑换令牌 / 退出
+app/admin/(auth)/login/*       登录表单 / 登录与退出 Action
 app/admin/comments/*           按状态筛选 + 通过/拒绝/删除（form + Server Action）
 app/admin/timeline/*           新建/编辑同表单 upsert + 状态切换
 ```
@@ -335,13 +335,14 @@ app/admin/timeline/*           新建/编辑同表单 upsert + 状态切换
 **守卫三分支**（都不渲染后台框架）：
 
 1. 无数据库 → 显示「后台暂不可用」。
-2. 无 `ADMIN_EMAIL` → 显示「后台未配置」。
+2. 缺 `ADMIN_EMAIL` 或 `INTERACTION_HASH_SALT` → 显示「后台未配置」。
 3. 未登录 → `redirect('/admin/login?next=/admin')`。
 
 **安全不变量**：
 
-- 不自建密码存储；令牌与会话只存哈希，一次性语义交给数据库的 `where used_at is null`。
-- 白名单来自 `ADMIN_EMAIL`；**未配置时后台整体关闭**（忘记配环境变量不应导致任何人都能进后台）。
+- 口令不落库：账号来自 `ADMIN_EMAIL`，口令来自 `INTERACTION_HASH_SALT`，服务端每次现算现比；拖库拿不到可用凭据。
+- 会话只存哈希，可单独撤销；登录失败不区分「邮箱不在名单」与「口令错误」。
+- 缺账号或缺口令时**后台整体关闭**（忘记配环境变量不应导致任何人都能进后台）。
 - 对外统一文案，防邮箱枚举。
 - 重定向只允许同源白名单后台路径（拒 `//host`、反斜杠、`..`）。
 - 退出走 POST / Server Action，不用可被预取的 GET 链接。

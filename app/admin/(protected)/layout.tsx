@@ -23,7 +23,7 @@ import { logout } from '../(auth)/login/actions'
  *
  * 三分支都不渲染后台框架，避免「先闪现后台再跳走」：
  * 1. 没有数据库 → 后台整体不可用；
- * 2. 没有 ADMIN_EMAIL 白名单 → 后台整体关闭（安全默认值）；
+ * 2. 缺 ADMIN_EMAIL 或 INTERACTION_HASH_SALT → 后台整体关闭（安全默认值）；
  * 3. 未登录 / 会话无效 → 跳登录页并带上 next。
  *
  * middleware 只做快速会话存在性检查（可省），真正的授权在这里以及每个
@@ -55,7 +55,7 @@ export default async function ProtectedAdminLayout({
       <main className="mx-auto max-w-[560px] px-4 py-16">
         <h1 className="font-display text-2xl">后台未配置</h1>
         <p className="mt-2 text-sm leading-relaxed text-[var(--muted)]">
-          需要设置 ADMIN_EMAIL 环境变量（可用逗号分隔多个管理员邮箱）。
+          需要设置 ADMIN_EMAIL（管理员邮箱列表）与 INTERACTION_HASH_SALT（登录口令）。
           未配置时后台整体关闭，这是刻意的安全默认值。
         </p>
         <div className="mt-5">

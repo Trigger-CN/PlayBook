@@ -2880,3 +2880,136 @@ D-25 §12 的回差确实修好了闪烁（探针 11/11 PASS），但**没有一
 - **「0.65 档是否需要更轻/更重」由用户上手判断**：改 `THRESHOLD_MIN` 即可，
   但**必须保持 > 0.5**，否则死区归零、中点闪烁必然重现。这条是硬约束，不是调参建议。
 - `CREEP_RATIO`（0.14）与 `END_ROOM_RATIO`（0.8）本轮未改，行为与 D-27 一致。
+
+## D-29 后台登录改为「邮箱 + 环境变量口令」：删掉一次性令牌链路
+
+### 1. 需求与约束
+
+用户要求：把后台「发送验证邮件 / 一次性登录链接」改成账号口令登录，账号为 `ADMIN_EMAIL`，口令为 `INTERACTION_HASH_SALT`。
+
+约束条件（来自既有架构决策，不得削弱）：
+
+- 每个 Server Action / Route Handler 独立鉴权，不依赖 layout 守卫或 UI 隐藏。
+- `middleware.ts` 不是安全边界，只做 cookie 存在性检查。
+- 重定向只允许同源白名单后台路径（拒 `//host`、反斜杠、`..`）。
+- 后台所有响应带 `X-Robots-Tag: noindex, nofollow`。
+- 客户端组件不得引入 server-only 模块。
+
+### 2. 口令为什么不进数据库
+
+旧实现里有一条「令牌只存哈希」的规则。改成口令登录后最容易顺手做的事是新建一张 `admin_credentials` 表存 `sha256(salt + password)`。**这条弯路被明确否决**：
+
+账号来自 `ADMIN_EMAIL`，口令来自 `INTERACTION_HASH_SALT`，两者都是环境变量。服务端每次登录现算现比，数据库里既没有口令也没有口令哈希。拖库这条路根本不产出可用凭据 —— 这比「存哈希再校验」更强，也顺带满足设计文档里「不自建密码存储」的原始约束。
+
+代价必须说清，否则是自欺：改口令 = 改环境变量 + 重启；没有「找回口令」，也没有按时轮换机制。单人后台可接受，多人场景应换成真正的身份提供方。
+
+### 3. 比较方式：先摘要，再恒定时间比较
+
+```
+function digest(value) {
+  return createHash('sha256').update(value, 'utf8').digest()
+}
+
+function safeEqualSecret(left, right) {
+  return timingSafeEqual(digest(left), digest(right))
+}
+```
+
+两个要点：
+
+1. **必须先摘要**。`crypto.timingSafeEqual` 在两侧长度不等时**直接抛异常**，不是返回 `false`。口令长度本身就是信息，直接传原始字符串会得到一个会抛错的比较函数。
+2. 摘要后长度恒为 32 字节，`timingSafeEqual` 永不抛，比较耗时与输入长度无关。
+
+同一个函数也用于会话令牌哈希的比较（原来那个 `safeEqualHex` 因为校验的是等长 hex 所以不抛，但换成定长摘要后语义统一、不再依赖「两边一定等长」这个隐含前提）。
+
+### 4. 不提前返回：两项判断必须都算完
+
+```
+const emailMatches = isAllowedAdminEmail(normalized)
+const passwordMatches = safeEqualSecret(password, adminPassword())
+
+if (emailMatches && passwordMatches) return { ok: true, email: normalized }
+return { ok: false, reason: 'denied' }
+```
+
+不能在「邮箱不在白名单」时立即 `return`：那样响应时间会变成「该邮箱是否为管理员」的旁路 —— 名单外邮箱比名单内邮箱快一个口令比较的时间。两行都算完再合并，代价是几十微秒，换来的是不可区分。
+
+### 5. 失败文案只有一句
+
+`DENIED_MESSAGE = '邮箱或口令不正确。'`
+
+「邮箱不在名单」与「口令不对」共用同一句话。旧实现里同样是这个思路（对外统一文案防邮箱枚举），本轮延续。
+
+限流键用 `admin-login:${hashValue(\`email:${email}\`)}` —— 内存 Map 里没必要留原始邮箱。参数 `5 次 / 5 分钟`，与旧实现的 `3 次 / 10 分钟` 不同：口令登录是可在线猜测的，窗口要短、次数要松一点，让人输错几次仍能继续，但不足以暴力搜索。
+
+### 6. `isAdminConfigured()` 的语义变了
+
+旧版：`adminAllowlist().length > 0`。
+
+新版：`adminAllowlist().length > 0 && adminPassword().length > 0`。
+
+原因是现在**缺口令等于没有凭据可校验**。如果只检查账号，`INTERACTION_HASH_SALT` 未配置时 `adminPassword()` 返回空串，那么「提交空口令」就会匹配成功 —— 这是一个完全开放的后台。三处守卫（`(protected)/layout.tsx` 的未配置分支、登录 Action 的 `unavailable` 分支、`getAdminIdentity()` 的早退）都调用同一个函数，因此一处修正三处生效。
+
+### 7. 两个输入字段必须是受控的
+
+React 19 在 `<form action={fn}>` 提交后会自动重置非受控字段。口令登录尤其不能这样：口令输错一次，邮箱被清空、口令也没了，人得从头再打一遍。`email` 与 `password` 都用 `useState` + `onChange` 受控。
+
+这条教训来自 D-13 的「编辑器校验失败清空正文」，同一个机制、第二次踩到。
+
+### 8. 删掉的东西
+
+| 删除项 | 理由 |
+| --- | --- |
+| `app/admin/(auth)/login/verify/route.ts` 整个文件与目录 | 令牌兑换入口，没有令牌就没有兑换 |
+| `lib/auth/admin.ts` 的 `createLoginToken` / `consumeLoginToken` | 令牌链路的读端与写端 |
+| `TOKEN_TTL_MS`、`generateSecret` 常量与函数 | 只被上面两个函数使用 |
+| `LoginState.devLink` 字段与表单里的回显 `devLink` 渲染 | 开发环境回显登录链接，现在没有链接 |
+| 新增迁移 `20261023000001_admin_password_login.sql`：`drop table admin_login_tokens` + 重写 `purge_expired_admin_auth()` | 见下 |
+
+**为什么用一条新迁移显式 drop，而不是留着这张表**：留着有一个具体后果 —— `purge_expired_admin_auth()` 仍在 `delete from admin_login_tokens`，而一张没人写入的表永远只有过期行，每次清理都在做无用功；更麻烦的是后来的人读 schema 会以为还存在「发链接登录」这条路径，而代码里根本没有。
+
+**迁移内部的顺序不能反**：先 `create or replace function` 把清理函数对 `admin_login_tokens` 的引用去掉，再 `drop table`。反过来的话，两者之间的窗口里调用清理函数会直接报错。
+
+`admin_sessions` 与 `admin_audit_log` 不动 —— 与新的登录方式完全兼容。
+
+### 9. 验证（真实浏览器 + HTTP，20 项）
+
+用系统无头 Edge + CDP（端口 9395）跑 `.me/tmp/adm-probe.mjs`，同时用 `fetch` 做无 cookie 的 HTTP 基线。验证实例是 3100 端口的生产构建，环境变量注入为 `ADMIN_EMAIL=probe-admin@example.com`、`INTERACTION_HASH_SALT=probe-salt-7f3a9c1e5b2d4a86`（刻意与本地 `.env.local` 无关）。
+
+| 断言 | 实测 |
+| --- | --- |
+| 未登录访问 `/admin` 被重定向 | `307` → `/admin/login?next=%2Fadmin` |
+| 重定向响应也带 noindex | `noindex, nofollow` |
+| 登录页可访问且带 noindex | `200` / `noindex, nofollow` |
+| 口令框 autocomplete 正确 | `current-password` 存在 |
+| 旧的「发送登录链接」文案已消失 | `false` |
+| 旧的「一次性登录链接」文案已消失 | `false` |
+| `devLink` 字样已从 HTML 消失 | `false` |
+| `/admin/login/verify` 路由已不存在 | `404` |
+| `?next=//evil.com` 被清洗 | 隐藏域 = `/admin` |
+| `?next=https://evil.com/x` 被清洗 | 隐藏域 = `/admin` |
+| `?next=/admin/posts` 正常保留 | 隐藏域 = `/admin/posts` |
+| **口令错误被拒，且邮箱不被清空** | 停在 `/admin/login`；文案「邮箱或口令不正确。」；`aria-invalid` 命中 2 个字段；`emailValue` 仍为 `probe-admin@example.com` |
+| **口令正确可进入后台** | 落到 `/admin`；无错误文案；`aria-invalid=0`；页面出现「退出登录」 |
+| 会话 cookie 属性 | 存在；`httpOnly=true`；`sameSite=Lax` |
+| 带有效 cookie 访问 `/admin` | `200`；带 `noindex, nofollow`；渲染出后台外壳 |
+| **伪造 cookie 被服务端拒绝** | `307` → `/admin/login?next=/admin`（middleware 只验存在，真正拒绝来自 `requireAdmin()`） |
+| 点击退出后回到登录页 | `/admin/login`，登录表单在场 |
+| 退出后再访问 `/admin` | `307` → `/admin/login?next=%2Fadmin` |
+| 连续失败触发限流 | 第 4 次起文案变为「尝试过于频繁，请 NNN 秒后再试。」 |
+| 运行时错误 | 0（无 `FATAL`、无 `PROFILE_CLEANUP_FAILED`） |
+
+限流触发在第 4 次而非第 6 次，是因为本次会话此前已消耗 1 次失败尝试（口令错误那一轮），计数是同一个桶、同一进程内累积 —— 这正是限流该有的行为，不是缺陷。
+
+`typecheck` 0；`next build` 0（13/13 静态页，`/admin/login` 存在、无 `/admin/login/verify` 条目）；路由类型未退化（公开内容页仍为 `○ Static` / `● SSG`）；迁移 dry-run 只列出 `20261023000001_admin_password_login.sql` 一条。
+
+### 10. 一个探针层面的坑
+
+第一版验证时，`.next/types/validator.ts` 里仍有指向已删除 `verify/route.ts` 的引用，`tsc` 报 `TS2307`。这不是源码错误 —— `.next` 是上一轮构建的产物。**先跑一次 `next build` 让 Next 重新生成 `.next/types`，再跑 typecheck**，错误消失。顺序反过来会一直看到这条幽灵错误。
+
+### 11. 未验证范围
+
+- 真实触屏、屏幕阅读器、Firefox / Safari 未测（仅 Chromium 无头 + CDP）。
+- 口令强度没有服务端校验 —— `INTERACTION_HASH_SALT` 若被填成短串，登录依然接受。这是刻意的：它是部署者自己的凭据，加最小长度门槛只会让人把短串改成短串加点号的更差做法。生产部署应使用足够长的随机串。
+- 多实例部署时内存限流各自独立计数（已知局限，与 `lib/interactions/rate-limit.ts` 的既有说明一致）。
+- 没有口令轮换、没有多用户、没有「找回口令」。用户明确只要求单人账号口令登录，这些不在范围内。
