@@ -3635,3 +3635,107 @@ D-33 量的是「派生层算出来的 token 两两配对」。它从来没有�
 
 **颜色一旦在构建期被内联，运行期的主题切换就彻底失效。** 这一类缺陷不会出现在 token 审计里，因为审计量的是 token 值，不是渲染后的 DOM。判断「配色对不对」必须回到真实渲染的文字节点 —— D-33 的 `FAILCOUNT=0` 与用户的「还是看不清」并不矛盾，它们量的是两个不同的东西。
 
+
+---
+
+## D-35 原生表单控件的主题化
+
+### 1. 需求
+
+用户原话：
+
+> 有些UI配色还是不对，例如文章的评论编辑区域，在暗色调下，文本框还是白色的
+
+### 2. 根因：这一类控件从未被主题化
+
+**D-33 与 D-34 都量不到这个问题，因为它们数的是「文本节点」。** 空输入框里没有文本节点 —— `<textarea>` 的 `value` 是表单状态，不是 DOM 文本。所以「暗色下文本框还是白色」在两次审计里都是**结构性盲区**，不是量错了。
+
+真正的成因是两条叠加，且都不是配色问题：
+
+1. **Tailwind preflight 不给 `input[type=text|email|date]` / `textarea` / `select` 设背景。** 它只给 `button` 与 `input:where([type='button'|'reset'|'submit'])` 设了 `background-color: transparent`。其余控件落到浏览器 UA 的 `Field` 系统色 —— 那个颜色**恒为白色，与 `data-theme` 完全无关**。
+2. **preflight 把这些控件的 `color` 设为 `inherit`。** 夜间 `--ink` 是浅色（`#f3fcf9`），于是变成**浅字压白底**。
+
+第 3 条是渲染层的：`color-scheme` 从未声明过。它不控制 CSS 背景，但**控制 UA 自绘的那部分像素** —— `select` 的展开箭头与选项列表、`date` 的日历图标、`checkbox` 的勾选块、滚动条、控件内部的焦点环。不声明，这些像素在夜间会保持「白底深字」的系统默认。
+
+### 3. 影响范围
+
+全站 21 个文字类控件，全部是同一状态：
+
+| 位置 | 控件 | 数量 |
+|---|---|---|
+| `components/interactions/comment-section.tsx` | 昵称 input、邮箱 input、评论 textarea | 3 |
+| `app/admin/(protected)/posts/post-editor.tsx` | 标题、摘要、日期、分类、标签、封面、封面说明 | 7 |
+| `app/admin/(protected)/timeline/page.tsx` | 标题、正文、类型 select、状态 select、日期、图片地址、图片替代文本、外部链接、4 个筛选控件 | 9 |
+| `app/admin/(auth)/login/login-form.tsx` | 邮箱、口令 | 2 |
+
+这些组件里原本只有 `borderColor` 内联样式，**没有一处设 `background` 或 `color`** —— 它们在等 CSS 兜底，而 CSS 从未兜底。
+
+### 4. 修法
+
+只改 `app/globals.css` 的 `@layer base`，共 55 行纯增量，不动任何组件：
+
+```css
+input:not([type='button']):not([type='reset']):not([type='submit']):not([type='checkbox']):not([type='radio']):not([type='range']),
+textarea,
+select {
+  background-color: var(--surface);
+  color: var(--ink);
+}
+
+:where(input, textarea, select):disabled {
+  background-color: var(--soft);
+  color: var(--muted);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+}
+```
+
+外加 `:root { color-scheme: light }` 与 `:root[data-theme='night'] { color-scheme: dark }`。
+
+**三个刻意的选择：**
+
+1. **用 `var(--surface)` 而不是 `--soft`。** 输入框在视觉上是「内容层」，与卡片同层；`--soft` 是「凹陷/次级」层，用在禁用态。
+2. **不用 `:where()` 降优先级。** preflight 的 `color: inherit` 是元素选择器，`:where()` 的权重为 0，拼不过它。这里必须显式给足够的特异度（6 个 `:not()` 把权重抬到 (0,6,0) 级别）。
+3. **排除 checkbox / radio / range。** 它们由 UA 整体绘制，设 `background` 既无效也会破坏原生外观；改用 `color-scheme` 让 UA 自己跟随，这是唯一正确的路径。
+
+`::placeholder` 也一并修掉：preflight 把它写死成 `gray.400`（`#9ca3af`）—— 那是个**硬编码色值**，违反「组件里不得出现十六进制色值」的同一条原则；夜间在白底上勉强可见、在深底上直接消失。改 `--muted` 后与全站「次要文字」同口径（已对 canvas / surface / soft 三层求解 AA 4.5）。
+
+### 5. 验证
+
+新写探针 `probe-form-controls.mjs`，逐控件读 `getComputedStyle().backgroundColor` 与 `color`，覆盖 5 个页面 × 日夜两态：
+
+```
+TOTAL_CONTROLS=66   FAIL_CONTROLS=0
+```
+
+| 页面 | 控件数 | 夜间 textarea 实测 |
+|---|---|---|
+| `/posts/playful-recorder`（评论表单） | 3 | `#f3fcf9` on `#282129` = **15.00** |
+| `/admin/posts/new` | 8 | 同上 |
+| `/admin/posts/playful-recorder/edit` | 8 | 同上 |
+| `/admin/timeline` | 12 | 同上 |
+| `/admin/login` | 2 | `#f3fcf9` on `#282129` = **15.00** |
+
+**最关键的证据是 `ownBg`**：夜间实测 `ownBg=rgb(40, 33, 41)`，即 `--surface` 的当期值 `#282129`。修前它会是 `rgb(255, 255, 255)`（UA Field）。这不是「碰巧好看」，是**控件自己的背景真的换成了当期 token**。
+
+`color-scheme` 10/10 全对（5 页 × 2 态）：日间 `light`、夜间 `dark`。
+
+**截图取证**（不止数字）：夜间评论表单与时间轴管理页已逐像素确认 —— 输入框、textarea、两个 `select` 全部为深色；`select` 的展开箭头与日期控件的日历图标也已是浅色，说明 `color-scheme` 在 UA 自绘层生效。日间截图确认没有回归（输入框仍为浅色 `#fdfffe`，与页面同层）。
+
+**回归验证**：`scan-admin3.log` → `TOTAL_NODES=1238 FAIL_NODES=0`；`scan-shiki3.log` → 日夜各 `TOKENS=16 FAIL=0`。D-33 与 D-34 的成果零回归。`next build` → `BUILD=0`。
+
+### 6. 未覆盖
+
+- `input[type='date']` 的日期选择面板本身（点开后的弹层）未截图验证 —— 它由浏览器绘制，`color-scheme` 理论上覆盖，但没有像素证据。
+- 未测 Firefox / Safari 的 `Field` 系统色行为差异。
+- 390px 移动端本轮仍未验证。
+- `:autofill` 状态未处理 —— Chrome 的自动填充会强制覆盖背景色为浅蓝（`-webkit-autofill`）。当前没有登录表单保存密码以外的自动填充场景，本轮未做。
+
+### 7. 一条值得记住的结论
+
+**「逐文本节点审计」有一个结构性盲区：它看不见空控件。** D-33/D-34 量了 1238 个文本节点、数十个代码 token，全部为 0 失败，而用户一眼就能看到「文本框还是白的」—— 因为那个白色从来没有被任何文本节点表示过。
+
+判断配色是否合格，除了「渲染后的文字」，「**渲染后的控件自身**」是独立的第二类对象，必须单独列举、单独量。这一次我把「页面上有哪些 form 控件」当成一次显式的清点（42 个开标签，21 个文字类），而不是靠文本遍历顺带发现。

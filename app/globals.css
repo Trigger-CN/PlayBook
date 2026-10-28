@@ -25,6 +25,21 @@
 
     /* 站点外壳 */
     --header-height: 88px;
+
+    /*
+     * 原生控件的配色方案（D-35）。
+     *
+     * 这不是装饰：UA 用它决定**自绘**部分怎么上色 —— select 的展开箭头与
+     * 选项列表、date 的日历图标、checkbox 的勾选块、滚动条、控件内部的焦点环。
+     * 这些像素不受 CSS background 控制，不声明就会在夜间保持白底深字。
+     *
+     * 这里只写 light / dark 两个关键字，不引入任何色值。
+     */
+    color-scheme: light;
+  }
+
+  :root[data-theme='night'] {
+    color-scheme: dark;
   }
 
   * {
@@ -49,6 +64,46 @@
       background-color 0.25s,
       color 0.25s;
   }
+
+  /*
+   * 原生表单控件（D-35）。
+   *
+   * 为什么必须显式给背景色：Tailwind preflight 只给 button 与
+   * input[type=button|reset|submit] 设了 background-color: transparent，
+   * 对 input[type=text|email|date]、textarea、select**完全没有设背景** ——
+   * 它们落到浏览器 UA 的 Field 系统色，那个颜色恒为白色，与 data-theme 无关。
+   * 同时 preflight 把这些控件的 color 设成 inherit，而夜间 --ink 是浅色，
+   * 于是浅字压白底。这不是配色没调好，是这些控件从未被主题化。
+   *
+   * 为什么不用 :where() 降优先级：preflight 的 color: inherit 是元素选择器，
+   * :where() 的权重为 0，拼不过它。这里显式给足够的特异度。
+   *
+   * 只处理「文字类」控件。checkbox / radio / range 由 UA 整体绘制，
+   * 给它们设背景既无效也会破坏原生外观，改用上面的 color-scheme 让 UA 自己跟随。
+   */
+  input:not([type='button']):not([type='reset']):not([type='submit']):not([type='checkbox']):not([type='radio']):not([type='range']),
+  textarea,
+  select {
+    background-color: var(--surface);
+    color: var(--ink);
+  }
+
+  /* 禁用态回退到 --soft，与时间轴页 readOnly 的写法同一口径。 */
+  :where(input, textarea, select):disabled {
+    background-color: var(--soft);
+    color: var(--muted);
+  }
+
+  /*
+   * 占位符。preflight 把它写死成 gray.400 (#9ca3af) —— 那是个硬编码色值，
+   * 夜间在白底上勉强可见、在深底上直接消失。placeholder 是提示性文字，
+   * 用 --muted，与全站「次要文字」同口径（已对 canvas / surface / soft 三层求解 AA 4.5）。
+   */
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--muted);
+  }
+
 
   :focus-visible {
     outline: 4px solid var(--focus);
