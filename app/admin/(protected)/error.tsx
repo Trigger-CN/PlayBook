@@ -28,7 +28,7 @@ export default function AdminError({
           type="button"
           onClick={reset}
           className="rounded-lg border px-4 py-2 text-sm font-extrabold"
-          style={{ borderColor: 'var(--line)', background: 'var(--cream)', color: '#4a2d11' }}
+          style={{ borderColor: 'var(--line)', background: 'var(--cream)', color: 'var(--on-accent)' }}
         >
           重试
         </button>

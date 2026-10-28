@@ -359,6 +359,10 @@ export function deriveLightTokens(colors: readonly string[]): PaletteTokens {
     // lilac = 主强调色与第三强调色的混合，取一个介于两者之间的色相
     '--lilac': toHex(capOn(tint(mix(p1, p3, 0.5), 0.2), onAccent)),
     '--lilac-base': toHex(shade(mix(p1, p3, 0.5), 0.5)),
+
+    // ---- 代码高亮（D-34）----
+    // 由派生层生成而非写在主题文件里：见 deriveCodeTokens 的注释。
+    ...deriveCodeTokens(p1, p2, p3, ink, muted, soft, 'light'),
   }
 }
 
@@ -446,6 +450,69 @@ export function deriveNightTokens(colors: readonly string[]): PaletteTokens {
 
     '--lilac': toHex(capOn(tint(mix(p1, p3, 0.5), 0.2), onAccent)),
     '--lilac-base': toHex(shade(mix(p1, p3, 0.5), 0.62)),
+
+    // ---- 代码高亮（D-34）----
+    ...deriveCodeTokens(p1, p2, p3, ink, muted, soft, 'night'),
+  }
+}
+
+/**
+ * 代码高亮的 8 个语义色（D-34）。
+ *
+ * ## 为什么由派生层生成
+ *
+ * 上一版用的是 Shiki 自带的 `github-light` 主题。那是**固定色值**：构建期
+ * 就把 hex 内联进每个 `<span style="color:#xxxxxx">`，`data-theme` 切换对它
+ * 完全无效。实测夜间 19 个 token 全部不达标，最差 1.01:1（深蓝字压深灰底）。
+ *
+ * 修法不是「换一个深色主题」，而是**把颜色从构建期搬到运行期**：主题里写
+ * `var(--code-*)`，Shiki 原样输出（实测它不校验颜色格式），这些变量再由
+ * `:root` / `:root[data-theme='night']` 两套规则各自决定。一份主题吃两套变量。
+ *
+ * ## 为什么只有 8 个
+ *
+ * 语法高亮的色相数量超过 8 个就不可能全部同时满足 4.5:1 —— 调色板一亮，
+ * 相邻色的区分度就靠人眼而非对比度了。8 个足以覆盖「关键字 / 字符串 / 数字 /
+ * 注释 / 类型 / 名称 / 实体 / 标点」这八类语义，而它们的**区分手段不只有色相**：
+ * 还有字重与斜体（主题里一并给）。
+ *
+ * ## 约束
+ *
+ * 每一色都对 `soft` 求解 AA（`soft` 是代码块的实际底色，也是三层浅底里
+ * 最深/最亮的那层，即最差情况）。`--code-plain` 直接用 `ink`，不重新求解 ——
+ * 它已经在 canvas/surface 上达 7:1，而代码块只需 4.5。
+ */
+function deriveCodeTokens(
+  p1: Rgb,
+  p2: Rgb,
+  p3: Rgb,
+  ink: Rgb,
+  muted: Rgb,
+  soft: Rgb,
+  theme: 'light' | 'night',
+): PaletteTokens {
+  const direction = theme === 'light' ? 'darker' : 'lighter'
+  // 起点全部从三个强调色里取，保证代码高亮仍在 5 色体系内，不是另开一套调色板。
+  // 提亮/压暗的方向随主题走；ensureContrastEither 会在起点本就不达标时自动换向。
+  const solve = (seed: Rgb) => ensureContrastEither(seed, [soft], AA_TEXT, direction)
+
+  return {
+    // 标点与普通标识符：直接复用正文色，避免代码块里出现第二种「主色」。
+    '--code-plain': toHex(ink),
+    // 注释：语义上就该比正文弱，起点用 muted，再保证在 soft 上达标。
+    '--code-comment': toHex(solve(muted)),
+    // 关键字：主强调色。
+    '--code-keyword': toHex(solve(shade(p1, theme === 'light' ? 0.28 : 0))),
+    // 字符串：次强调色。
+    '--code-string': toHex(solve(shade(p2, theme === 'light' ? 0.32 : 0.05))),
+    // 数字与常量：第三强调色。
+    '--code-number': toHex(solve(shade(p3, theme === 'light' ? 0.3 : 0))),
+    // 实体与函数名：主强调与第三强调的中间色相。
+    '--code-entity': toHex(solve(shade(mix(p1, p3, 0.5), theme === 'light' ? 0.3 : 0))),
+    // 类型与类名：次强调与第三强调的中间色相。
+    '--code-type': toHex(solve(shade(mix(p2, p3, 0.4), theme === 'light' ? 0.34 : 0.06))),
+    // 变量名与属性名：主强调色更淡的版本，与 keyword 同色相不同亮度。
+    '--code-name': toHex(solve(shade(p1, theme === 'light' ? 0.1 : 0))),
   }
 }
 

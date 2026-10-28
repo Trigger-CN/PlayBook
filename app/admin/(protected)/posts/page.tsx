@@ -219,7 +219,7 @@ export default async function AdminPostsPage({ searchParams }: Props) {
                     {post.featured ? (
                       <span
                         className="ml-2 rounded-full px-2 py-0.5 text-[10px] font-bold"
-                        style={{ background: 'var(--cream)' }}
+                        style={{ background: 'var(--cream)', color: 'var(--on-accent)' }}
                       >
                         精选
                       </span>

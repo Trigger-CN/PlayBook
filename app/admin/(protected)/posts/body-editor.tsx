@@ -1,9 +1,11 @@
 'use client'
 
 import { markdown } from '@codemirror/lang-markdown'
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { linter, lintGutter, type Diagnostic as CmDiagnostic } from '@codemirror/lint'
 import { EditorState, type Extension } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
+import { tags } from '@lezer/highlight'
 import { basicSetup } from 'codemirror'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -76,6 +78,71 @@ const editorTheme = EditorView.theme({
     borderRadius: '10px',
   },
 })
+
+/**
+ * 语法高亮（D-34）。
+ *
+ * ## 为什么不能继续用 `defaultHighlightStyle`
+ *
+ * `@codemirror/language` 自带的默认高亮样式是一组**硬编码十六进制**：
+ * `#404740`（meta）、`#708`（keyword）、`#219`（atom）、`#a11`（string）、
+ * `#e40`（regexp）、`#00f`（definition）、`#085`（typeName）、`#940`（comment）……
+ * 它们不认识 5 色体系，也不认识明暗主题。实测夜间：`#404740` 压 `#282129`
+ * 只有 **1.64:1**，`#221199` 只有 **1.20:1** —— 编辑器里几乎全黑。
+ *
+ * ## 与代码块共用同一批变量
+ *
+ * 这里刻意用 `var(--code-*)` 而不是另开一套。理由：编辑器里的 Markdown 与
+ * 发布后的代码块是**同一段文字的两种呈现**，它们应该看起来像同一套配色。
+ * 共用之后，配色只在 `deriveCodeTokens()` 一处定义，改一处两边同步。
+ *
+ * 注意：`syntaxHighlighting()` 同时接受多个 HighlightStyle，后注册的优先级
+ * 更高。basicSetup 里已经注册了 defaultHighlightStyle，所以这里追加的会覆盖它。
+ */
+const codeHighlightStyle = HighlightStyle.define([
+  { tag: [tags.meta, tags.processingInstruction], color: 'var(--code-comment)' },
+  { tag: [tags.comment, tags.lineComment, tags.blockComment], color: 'var(--code-comment)', fontStyle: 'italic' },
+  {
+    tag: [tags.keyword, tags.modifier, tags.controlKeyword, tags.operatorKeyword, tags.definitionKeyword, tags.moduleKeyword],
+    color: 'var(--code-keyword)',
+    fontWeight: '600',
+  },
+  {
+    tag: [tags.string, tags.special(tags.string), tags.character, tags.attributeValue],
+    color: 'var(--code-string)',
+  },
+  {
+    tag: [tags.number, tags.bool, tags.null, tags.atom, tags.literal, tags.unit, tags.constant(tags.name)],
+    color: 'var(--code-number)',
+  },
+  {
+    tag: [tags.function(tags.variableName), tags.function(tags.propertyName), tags.macroName, tags.standard(tags.function(tags.variableName))],
+    color: 'var(--code-entity)',
+  },
+  {
+    tag: [tags.typeName, tags.className, tags.tagName, tags.standard(tags.tagName), tags.namespace],
+    color: 'var(--code-type)',
+  },
+  {
+    tag: [tags.variableName, tags.propertyName, tags.attributeName, tags.definition(tags.propertyName)],
+    color: 'var(--code-name)',
+  },
+  {
+    tag: [tags.punctuation, tags.bracket, tags.separator, tags.operator, tags.derefOperator, tags.arithmeticOperator, tags.logicOperator, tags.compareOperator, tags.updateOperator, tags.definitionOperator, tags.typeOperator, tags.controlOperator],
+    color: 'var(--code-plain)',
+  },
+  { tag: tags.link, color: 'var(--link)', textDecoration: 'underline' },
+  { tag: tags.url, color: 'var(--link)' },
+  { tag: tags.heading, color: 'var(--code-plain)', fontWeight: 'bold', textDecoration: 'underline' },
+  { tag: tags.strong, color: 'var(--code-plain)', fontWeight: 'bold' },
+  { tag: tags.emphasis, color: 'var(--code-plain)', fontStyle: 'italic' },
+  { tag: tags.strikethrough, color: 'var(--code-comment)', textDecoration: 'line-through' },
+  { tag: tags.invalid, color: 'var(--code-keyword)', textDecoration: 'underline wavy' },
+  { tag: [tags.contentSeparator, tags.quote], color: 'var(--code-comment)' },
+])
+
+/** 编辑器需要的全部扩展里与「外观」有关的那部分。 */
+const syntaxTheme: Extension = [editorTheme, syntaxHighlighting(codeHighlightStyle)]
 
 /** 把「第几行第几列」翻译成 CodeMirror 需要的文档偏移。 */
 function toCmDiagnostic(view: EditorView, item: MarkdownDiagnostic): CmDiagnostic {
@@ -158,7 +225,8 @@ export function PostBodyEditor({
         },
         { delay: 600 },
       ),
-      editorTheme,
+      // 外观：编辑器主题 + 语法高亮（后者覆盖 basicSetup 里的 defaultHighlightStyle）
+      syntaxTheme,
       EditorView.contentAttributes.of({ 'aria-label': '正文 Markdown 源码' }),
       EditorView.updateListener.of((update) => {
         if (!update.docChanged) return

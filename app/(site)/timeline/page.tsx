@@ -16,7 +16,7 @@ export default async function TimelinePage() {
       <header className="pb-8 pt-8">
         <span
           className="inline-flex items-center gap-2 rounded-full px-3 py-[7px] text-xs font-extrabold"
-          style={{ background: 'var(--cream)', color: '#4a2d11' }}
+          style={{ background: 'var(--cream)', color: 'var(--on-accent)' }}
         >
           TIMELINE / 时间轴
         </span>

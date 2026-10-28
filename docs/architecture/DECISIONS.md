@@ -3500,3 +3500,138 @@ KaTeX 的 CSS 从 `app/layout.tsx` 引入（`import 'katex/dist/katex.min.css'`�
 
 **「全部通过」和「构造上保证通过」是两回事。** 审计前的 177 项通过里，有相当一部分是「这几套预设碰巧够」，而不是「派生层保证它够」—— `--sky` 链接色就是典型：12 套里 8 套通过，但那 8 套只是运气。修完之后，链接色改成了对三层底色统一求解，通过才变成构造出来的保证。
 所以这里的选择不是「CodeMirror 比 TipTap 好」，而是：**当源码本身就是产品的数据格式时，编辑器应当编辑源码，而不是编辑它的某个投影。**
+
+---
+
+## D-34 后台与代码高亮的对比度修复
+
+### 1. 需求
+
+用户原话：
+
+> 后台编辑文章、时间轴、评论等还有配色对比度问题，出错通常出现在文本和背景色，导致文本可读性差，尤其是markdown代码高亮的配色
+
+D-33 已经在 token 级做到 `FAILCOUNT=0`，但用户报告的仍然存在。**这不是重复劳动，也不是错觉 —— 是 D-33 的审计口径有盲区。**
+
+D-33 量的是「派生层算出来的 token 两两配对」。它从来没有量过：
+
+1. **亮色 cap 上写 `--ink` 或干脆不写 `color`（继承）** —— `--ink` 的 7:1 保证只对 canvas / surface 成立，夜里它是浅色；
+2. **组件里写死的十六进制色值** —— 三套 `#4a2d11` / `#2a2118` / `#211522`；
+3. **构建期被内联进 HTML 的颜色** —— Shiki 与 CodeMirror 的主题色在构建时就是固定 hex，`data-theme` 切换对它们**完全无效**。
+
+第三类是本轮的主要工作量，也是用户单独强调的那一项。
+
+### 2. 扫描方法与原始数字
+
+**后台**：无头 Edge（CDP）真实登录 `/admin/login`（探针凭据），遍历 8 个页面 × 日间/夜间两态，**逐个可见文本节点**读 `getComputedStyle().color`，再向上回溯到第一个不透明背景（沿途合成半透明层），按 WCAG 判定（大号字 3:1，其余 4.5:1）。
+
+修复前：`TOTAL_NODES=1244 FAIL_NODES=54 GROUPS=5`
+
+| 分组 | 位置 | 实测 |
+|---|---|---|
+| 1 | 概览 night「当前没有待办事项」`<p style="background: var(--mint)">` | `#f3fcf9` on `#82e2bf` = **1.48** |
+| 2 | 活动 night「公开」徽标 ×37（`background: var(--mint); color: var(--ink)`） | **1.48** |
+| 3 | 文章列表 night「精选」徽标（`background: var(--cream)`，无 `color`） | `#f3fcf9` on `#dff7ee` = **1.08** |
+| 4 | 编辑文章 night CodeMirror token ×14（`#404740` on `#282129`） | **1.64** |
+| 5 | 编辑文章 night CodeMirror token ×1（`#221199` on `#282129`） | **1.20** |
+
+**Shiki**：先用 Node 侧脚本把 `github-light` 的 19 个 token 色 × 6 套预设 × 日夜 × `--soft` 全算一遍：`TOTAL=228 FAILCOUNT=150`，其中夜间 19/19 全挂，最差 `#032f62` = **1.01**。再用真实浏览器复核 `/posts/playful-recorder`（15 个 span）：日间挂 2 个（`#e36209` = 3.24），夜间挂 11 个（最差 `#24292e` = **1.14**）。
+
+### 3. 根因：三类「构建期硬编码」
+
+| 来源 | 位置 | 硬编码 | 后果 |
+|---|---|---|---|
+| Shiki 内置主题 | `lib/content/markdown.ts` 原 `theme: 'github-light'` | 19 个固定 hex | 夜间 19/19 挂，最差 1.01:1 |
+| CodeMirror 默认高亮 | `@codemirror/language` 的 `defaultHighlightStyle` | `#404740` / `#708` / `#219` / `#a11` / `#e40` / `#00f` / `#30a` / `#085` / `#167` / `#256` / `#00c` / `#940` / `#f00` | 夜间 1.64 / 1.20 |
+| 组件写死亮 cap 文字色 | 9 个文件 13 处 | `#4a2d11` / `#2a2118` / `#211522`，以及「无显式 color 继承 `--ink`」 | 夜间 1.08~1.48 |
+
+**这三类同源：颜色在构建期被固化，`data-theme` 切换对它们无效。** 所以这不是「配色没调好」，而是「主题根本没有日夜两态」。修法必须是把颜色从构建期搬到运行期，而不是换一个主题色。
+
+### 4. 突破口：Shiki 不校验颜色格式
+
+先用探针确认 Shiki 会把非标准颜色值原样输出：
+
+```html
+<span style="color:var(--code-keyword)">const</span>
+```
+
+再验证完整自定义主题（含 `colors['editor.foreground']`）：`HARDCODED_COLORS_IN_OUTPUT=[]`、`HAS_BBBBBB=false` —— 输出里零个硬编码颜色，也没有未覆盖 token 回退到默认灰。
+
+**结论：一份主题对象吃两套 CSS 变量**（`:root` 与 `:root[data-theme='night']`），切主题时代码块自动跟着变。不需要第二份主题、不需要客户端重渲染、不增加首屏成本。
+
+### 5. 8 个 `--code-*` 的设计
+
+新增 `deriveCodeTokens(p1, p2, p3, ink, muted, soft, theme)`，每色都对 `--soft`（代码块的实际底色、三层浅底里最差的那层）求解 AA：
+
+| token | 语义 | 日间种子 | 夜间种子 |
+|---|---|---|---|
+| `--code-plain` | 标点、普通标识符 | `ink`（复用，不重解） | `ink` |
+| `--code-comment` | 注释 | `muted` | `muted` |
+| `--code-keyword` | 关键字、storage | `shade(p1, 0.28)` | `p1` |
+| `--code-string` | 字符串 | `shade(p2, 0.32)` | `shade(p2, 0.05)` |
+| `--code-number` | 数字、常量 | `shade(p3, 0.3)` | `p3` |
+| `--code-entity` | 实体、函数名 | `shade(mix(p1,p3,0.5), 0.3)` | 同 mix |
+| `--code-type` | 类型、类名 | `shade(mix(p2,p3,0.4), 0.34)` | `shade(..., 0.06)` |
+| `--code-name` | 变量名、属性名 | `shade(p1, 0.1)` | `p1` |
+
+**为什么只有 8 个**：语法高亮的色相数量超过 8 个，就不可能全部同时满足 4.5:1 —— 调色板一亮，相邻色的区分度只能靠人眼而不是对比度。8 个覆盖关键字 / 字符串 / 数字 / 注释 / 类型 / 名称 / 实体 / 标点八类语义，其余区分手段（字重、斜体）在主题里一并给。
+
+### 6. CodeMirror 与 Shiki 共用同一批变量
+
+编辑器里的 Markdown 源码与发布后的代码块是**同一段文字的两种呈现**，它们应该看起来像同一套配色。共用之后，配色只在 `deriveCodeTokens()` 一处定义，改一处两边同步。
+
+`syntaxHighlighting()` 同时接受多个 `HighlightStyle`，**后注册的优先级更高**。`basicSetup` 里已经注册了 `defaultHighlightStyle`，因此扩展数组里追加的 `syntaxTheme` 会覆盖它。
+
+`@codemirror/language` 不重新导出 `tags`（其 `.d.ts` 的 `export {…}` 列表里没有），必须从 `@lezer/highlight` 导入。后者此前只是传递依赖，本轮提为显式依赖 `^1.2.5`（实装 1.2.5，无 `engines` 字段，无 EBADENGINE，审计告警仍 11 条）。
+
+### 7. 亮色 cap 上的正确文字色是 `--on-accent`，不是 `--ink`
+
+`--mint` / `--cream` / `--coral` / `--sky` / `--pink` 都是 **cap（按钮面）**，它们的可读性保证是「`--on-accent` 压在上面 ≥4.5:1」，由 `capOn()` 在派生时逐个验证（5 个 cap × 日/夜 × 6 套 = 60 项，本轮全部实测通过，最差 4.53）。
+
+而 `--ink` 的保证是「压在 canvas / surface 上 ≥7:1」。**夜间 `--ink` 是浅色**，压在亮 cap 上就是浅字压浅底。
+
+所以「亮色块当底」的每一处都必须显式写 `color: var(--on-accent)`。**继承是不安全的**，因为父级通常继承到 `body` 的 `--ink`。
+
+本轮改掉的 13 处（9 个文件）：三套硬编码 hex 全部替换，两处 `color: var(--ink)` 改为 `--on-accent`，两处完全没有 `color` 的补上。
+
+### 8. 一次真实的自我制造回归
+
+改 `palette-core.ts` 时，`File.Edit` 的行范围把日间派生函数里的 `--lilac` / `--lilac-base` 两行**误删了**（夜间那两行还在）。
+
+**`npm run typecheck` 完全没有报错** —— 因为 token 是 `Record<string, string>`，少两个 key 类型上合法。只有 `next build` 在预渲染 `/` 时崩溃才暴露：`Cannot read properties of undefined (reading 'trim')`。
+
+两处修正：
+
+1. 补回那两行；
+2. **新增逐 token 新旧比对作为回归守卫**（`diff-tokens-d34.mjs`）：用 `git show HEAD:lib/theme/palette-core.ts` 与工作区版本各自派生 6 套 × 日夜的全部 token，逐一比对。结果 `SAME=288 CHANGED=0 ADDED=96 REMOVED=0` —— 证明现在是纯增量。
+
+**这条教训值得单独记：`typecheck` 通过不代表改动没有破坏数据。** 对于「动态 key 的配置对象」，唯一能在编译前抓到缺失的手段是逐项比对新旧产出。
+
+### 9. 验证
+
+| 层 | 方法 | 结果 |
+|---|---|---|
+| 后台 8 页 × 日夜 | 真实登录，逐文本节点 computed style | `TOTAL_NODES=1242 FAIL_NODES=0 GROUPS=0` |
+| 公开页 Shiki | 真实浏览器，16 个 token span | 日间 `TOKENS=16 FAIL=0`、夜间 `TOKENS=16 FAIL=0` |
+| 编辑器 CodeMirror | 真实浏览器，`.cm-content span` | `EDITOR_TOTAL=36 EDITOR_FAIL=0` |
+| `--code-*` 派生层 | Node 侧 6 套 × 日夜 × 8 色 + 5 cap | `TOTAL=156 FAILCOUNT=0` |
+| 擦边值精查 | 六位小数复核 | `BELOW_4.5=0`，`MIN=4.502534` |
+| 逐 token 回归 | 新旧派生值比对 | `SAME=288 CHANGED=0 ADDED=96 REMOVED=0` |
+| 构建 | 隔离副本 `next build` | `BUILD=0`，13/13 静态页，路由类型与上一版逐字一致 |
+
+**Shiki 侧最关键的证据**：修复后每个 span 的 `style=color:var(--code-entity)` 等**原样保留了变量**，而不是 hex。同一份 HTML、不同 CSS 变量，日间最紧 4.59、夜间最紧 4.56 —— 这才是「主题真的日夜两态」的实证。
+
+**CodeMirror 侧最关键的证据**：修前的 `#404740`（1.64）与 `#221199`（1.20）已完全消失；`--code-plain` 日间 `#1c121d`（18.13）→ 夜间 `#f3fcf9`（15.00），`--code-comment` 日间 `#737074`（4.86）→ 夜间 `#9b9d9e`（5.75）。
+
+### 10. 未覆盖
+
+- `.tag-chip` 选中态（`--ink` on `color-mix(in srgb, var(--pink) 34%, var(--surface))`）仍未算 —— 与 D-33 相同的遗留项。
+- 半透明 `--line` / `--grid` 叠色后的边框对比度未算（非文字，WCAG 无硬性要求）。
+- 390px 移动端本轮仍未验证。
+- 未测 Firefox / Safari、真实触屏、屏幕阅读器。
+- 只验证了 `classic` 这一套预设的真实浏览器渲染（`--code-*` 的 6 套 × 日夜由 Node 侧派生层覆盖，未逐套起浏览器）。
+
+### 11. 一条值得记住的结论
+
+**颜色一旦在构建期被内联，运行期的主题切换就彻底失效。** 这一类缺陷不会出现在 token 审计里，因为审计量的是 token 值，不是渲染后的 DOM。判断「配色对不对」必须回到真实渲染的文字节点 —— D-33 的 `FAILCOUNT=0` 与用户的「还是看不清」并不矛盾，它们量的是两个不同的东西。
+

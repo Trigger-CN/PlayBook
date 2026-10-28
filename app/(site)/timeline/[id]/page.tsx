@@ -94,7 +94,7 @@ export default async function TimelineDetailPage({ params }: TimelineDetailProps
         <div className="flex flex-wrap items-center gap-2">
           <span
             className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-extrabold"
-            style={{ background: `var(--${typeStyle.tone})`, color: '#211522' }}
+            style={{ background: `var(--${typeStyle.tone})`, color: 'var(--on-accent)' }}
           >
             <Icon name={typeStyle.icon} size={12} />
             {typeStyle.label}

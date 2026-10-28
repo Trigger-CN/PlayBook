@@ -34,7 +34,7 @@ export default async function AdminLoginPage({
         <div className="mb-6 text-center">
           <span
             className="inline-flex items-center gap-2 rounded-full px-3 py-[7px] text-xs font-extrabold"
-            style={{ background: 'var(--cream)', color: '#4a2d11' }}
+            style={{ background: 'var(--cream)', color: 'var(--on-accent)' }}
           >
             ADMIN / PLAYBOOK
           </span>

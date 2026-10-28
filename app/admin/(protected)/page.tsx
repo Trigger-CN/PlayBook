@@ -107,8 +107,8 @@ export default async function AdminDashboardPage() {
                   className="flex items-center justify-between gap-3 rounded-xl border px-4 py-2.5 text-sm font-bold"
                   style={{ borderColor: 'var(--line)', background: todo.tone }}
                 >
-                  <span style={{ color: '#2a2118' }}>{todo.label}</span>
-                  <span aria-hidden="true" style={{ color: '#2a2118' }}>
+                  <span style={{ color: 'var(--on-accent)' }}>{todo.label}</span>
+                  <span aria-hidden="true" style={{ color: 'var(--on-accent)' }}>
                     去处理 <Icon name="arrow_forward" size={13} />
                   </span>
                 </Link>
@@ -119,7 +119,7 @@ export default async function AdminDashboardPage() {
       ) : (
         <p
           className="mb-6 rounded-xl border px-4 py-2.5 text-sm font-bold"
-          style={{ borderColor: 'var(--line)', background: 'var(--mint)' }}
+          style={{ borderColor: 'var(--line)', background: 'var(--mint)', color: 'var(--on-accent)' }}
         >
           当前没有待办事项。
         </p>
@@ -153,7 +153,7 @@ export default async function AdminDashboardPage() {
             {overview.pendingComments > 0 ? (
               <span
                 className="ml-2 rounded-full px-2 py-0.5 text-[11px]"
-                style={{ background: 'var(--coral)' }}
+                style={{ background: 'var(--coral)', color: 'var(--on-accent)' }}
               >
                 {overview.pendingComments}
               </span>

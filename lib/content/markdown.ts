@@ -13,6 +13,7 @@ import remarkRehype from 'remark-rehype'
 import { unified } from 'unified'
 import type { Pluggable } from 'unified'
 
+import { PLAYBOOK_CODE_THEME } from '@/lib/content/code-theme'
 /**
  * 正文渲染管线（决策 D-32）。
  *
@@ -189,7 +190,11 @@ const rehypePlugins: Pluggable[] = [
   rehypeMermaidFence as unknown as Pluggable,
   rehypeSlug,
   [rehypeAutolinkHeadings, { behavior: 'wrap' }],
-  [rehypePrettyCode, { theme: 'github-light', keepBackground: false }],
+  // 主题不是 Shiki 内置的 `github-light`（D-34）。内置主题的颜色是固定十六进制，
+  // 构建期就内联进每个 `<span style="color:#xxxxxx">`，`data-theme` 切换对它无效 ——
+  // 夜间模式下深字压深底，实测 19/19 全部不达标，最差 1.01:1。
+  // PLAYBOOK_CODE_THEME 里所有颜色都是 `var(--code-*)`，由派生层按日夜各给一套。
+  [rehypePrettyCode, { theme: PLAYBOOK_CODE_THEME, keepBackground: false }],
   // throwOnError: false —— 写坏的公式就地显示成红色原文，不该让整篇文章渲染失败。
   // strict: 'ignore' —— KaTeX 的严格模式会把公式里的中文字符判为问题，中文站必须关掉。
   [rehypeKatex, { throwOnError: false, strict: 'ignore' }],

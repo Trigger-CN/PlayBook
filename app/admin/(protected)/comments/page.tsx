@@ -142,7 +142,7 @@ export default async function AdminCommentsPage({ searchParams }: Props) {
                   <b className="text-sm">{comment.authorName}</b>
                   <span
                     className="rounded-full px-2 py-0.5 text-[11px] font-extrabold"
-                    style={{ background: 'var(--cream)', color: '#4a2d11' }}
+                    style={{ background: 'var(--cream)', color: 'var(--on-accent)' }}
                   >
                     {STATUS_LABELS[comment.status] ?? comment.status}
                   </span>

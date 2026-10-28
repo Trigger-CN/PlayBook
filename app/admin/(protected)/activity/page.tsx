@@ -186,7 +186,7 @@ function ActivityRow({ row }: { row: ActivityLogRow }) {
           className="rounded-full px-1.5 py-0.5 text-[10px] font-extrabold"
           style={
             isPublic
-              ? { background: 'var(--mint)', color: 'var(--ink)' }
+              ? { background: 'var(--mint)', color: 'var(--on-accent)' }
               : { background: 'var(--soft)', color: 'var(--muted)' }
           }
           title={isPublic ? '会出现在公开「最近活跃」' : '只在后台可见'}

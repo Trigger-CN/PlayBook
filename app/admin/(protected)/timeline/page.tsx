@@ -287,7 +287,7 @@ export default async function AdminTimelinePage({ searchParams }: Props) {
             <button
               type="submit"
               className="rounded-lg border px-4 py-2 text-sm font-extrabold"
-              style={{ borderColor: 'var(--line)', background: 'var(--cream)', color: '#4a2d11' }}
+              style={{ borderColor: 'var(--line)', background: 'var(--cream)', color: 'var(--on-accent)' }}
             >
               {editing ? '保存修改' : '创建节点'}
             </button>
@@ -383,7 +383,7 @@ export default async function AdminTimelinePage({ searchParams }: Props) {
             <button
               type="submit"
               className="rounded-lg border px-3 py-1.5 text-xs font-extrabold"
-              style={{ borderColor: 'var(--line)', background: 'var(--cream)', color: '#4a2d11' }}
+              style={{ borderColor: 'var(--line)', background: 'var(--cream)', color: 'var(--on-accent)' }}
             >
               筛选
             </button>
@@ -418,7 +418,7 @@ export default async function AdminTimelinePage({ searchParams }: Props) {
                       <b className="text-sm">{item.title ?? '（无标题）'}</b>
                       <span
                         className="rounded-full px-2 py-0.5 text-[11px] font-extrabold"
-                        style={{ background: 'var(--cream)', color: '#4a2d11' }}
+                        style={{ background: 'var(--cream)', color: 'var(--on-accent)' }}
                       >
                         {STATUS_LABELS[item.status] ?? item.status}
                       </span>
