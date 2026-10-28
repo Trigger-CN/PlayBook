@@ -485,14 +485,18 @@
     color: var(--muted);
   }
 
+  /*
+   * 正文链接用 --link（D-33）。
+   *
+   * 旧实现日间用 --sky-base、夜间用 --sky。夜间那档是错的：--sky 是按钮面，
+   * 只保证与 --on-accent 的对比；放到更亮的表面色上实测只有 3.57~3.71（要 4.5）。
+   * --link 是对 canvas / surface / soft 三种底色统一求解过的专用链接色，
+   * 日夜两套各有一份，因此不再需要主题分支。
+   */
   .prose-playbook a {
-    color: var(--sky-base);
+    color: var(--link);
     text-decoration: underline;
     text-underline-offset: 3px;
-  }
-
-  :root[data-theme='night'] .prose-playbook a {
-    color: var(--sky);
   }
 
   .prose-playbook code {

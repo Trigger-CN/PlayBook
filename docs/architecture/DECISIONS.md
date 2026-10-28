@@ -1510,8 +1510,9 @@ export const DEFAULT_PALETTE_ID: PaletteId = 'harbor'
 
 | token | 目标 | 背景 |
 | --- | --- | --- |
-| `--ink` | ≥ **7:1**（AAA） | canvas **与** surface 都要满足 |
-| `--muted` | ≥ **4.5:1**（AA） | canvas **与** surface 都要满足 |
+| `--ink` | ≥ **7:1**（AAA） | canvas **与** surface 都要满足（soft 上只有 0.875rem 的代码块，按 4.5 判） |
+| `--muted` | ≥ **4.5:1**（AA） | canvas、surface **与 soft** 都要满足（D-33 补上 soft） |
+| `--link` | ≥ **4.5:1**（AA） | canvas、surface 与 soft 都要满足（D-33 新增） |
 | `--on-accent` 在 6 个 cap 上 | 各自 ≥ **4.5:1**（AA） | 逐个验证 |
 | cap vs base | ≥ **2:1** | 保证立体按钮的厚度感不消失 |
 | `--focus` | ≥ **3:1**（非文本） | canvas |
@@ -3412,4 +3413,90 @@ KaTeX 的 CSS 从 `app/layout.tsx` 引入（`import 'katex/dist/katex.min.css'`�
 
 **「富文本」是一类需求的名字，不是它的解法。** 用户要的是「写起来更顺手、看得见效果、公式图表能渲染」，这三件事分别对应编辑器、预览、渲染管线三个东西，没有一件要求把存储格式从源码换成文档树。反过来，真的换上富文本编辑器，第一个坏掉的恰恰是公式与图表 —— 它们在文档树里没有原生表示，只能塞进自定义节点，而自定义节点的 Markdown 序列化必然是本项目自己维护的一份私有格式。
 
+
+---
+
+## D-33 配色对比度审计与 15 项不合格修复
+
+### 1. 需求
+
+用户原话：`扫描检查一下全部配色是否符合对比度要求`，随后：`开始修改`。
+
+两步：先只读审计，不擅自改配色；拿到明确授权后再修。
+
+### 2. 审计方法与范围
+
+写 `.me/tmp/agent-41c1af08b3cc/contrast-audit.mjs`，用项目自带的 `typescript.transpileModule` 把 `lib/theme/palette-core.ts` 转译成 ESM **直接 import**，不另写一份对比度公式 —— 否则「审计通过」只能证明审计脚本自己算得对。
+
+范围是 6 套预设 × 日间 / 夜间两态 × 页面里真实存在的每一条前景 / 背景配对。判据：正文 `--ink` 在 canvas / surface 上按项目自己的 AAA **7:1**；其余文字 **4.5:1**；焦点环等非文本 **3:1**。
+
+### 3. 第一版审计报了 26 项，其中 11 项是审计自己的错
+
+**误报一：`--ink` on `--shell`（6 条）。** 我把 `--shell` 当成了文字背景。搜全部引用后确认它只有 4 处，**全部是 `background`**（about 头像块、配色实验室与触感面板的外层），且里面永远再套一层 `--surface` 才放文字。这不是真实配对，删除。
+
+**误报二：`--ink` on `--soft` 按 7:1 判（5 条）。** `--soft` 上的文字有两类：代码块 `font-size: 0.875rem`（非大号字，只需 4.5），引用块用的是 `--muted` 不是 `--ink`。按 4.5 重算全部通过。
+
+**这两次剔除都来自「先确认配对在页面上真的存在、字号真的要求这么高」，而不是「先相信脚本」。** 审计脚本会犯错，且错误方向常常是过于严格；报假阳性比漏报更伤信任。
+
+### 4. 最终真实结果：192 项中 15 项不合格
+
+**类型 A：`--muted` on `--soft`，11 项（6 套预设的日夜两态里 11 个组合）。**
+
+| 配色 | 修复前 | 要求 |
+| --- | --- | --- |
+| classic/light | 4.41 | 4.5 |
+| tide/light | 4.27 | 4.5 |
+| tide/night | 3.83 | 4.5 |
+| harbor/light | 4.12 | 4.5 |
+| harbor/night | 3.77 | 4.5 |
+| sunrise/light | 4.32 | 4.5 |
+| sunrise/night | 3.80 | 4.5 |
+| meadow/light | 4.18 | 4.5 |
+| meadow/night | 3.74 | 4.5 |
+| ember/light | 3.81 | 4.5 |
+| ember/night | 3.87 | 4.5 |
+
+真实渲染位置：`.tag-chip`（`app/globals.css` 里 `color: var(--muted)` + `background: var(--soft)`，字号 **11px**，每张文章卡都有）；以及十余处空状态提示（首页、文章列表、统计、活动、评论、后台多页）。
+
+**根因不是配色选得不好，是约束漏了一层。** `--muted` 生成时只对 `[canvas, surface]` 求解，而 `--soft` 是比两者都深（日间）/ 都亮（夜间）的第三种底色 —— 它从来不在求解范围里。
+
+**类型 B：夜间 `--sky` on `--surface`，4 项。** tide 3.60、sunrise 3.57、meadow 3.58、ember 3.71（要求 4.5）。
+
+真实渲染位置只有一处：`.prose-playbook a` 的夜间分支 `color: var(--sky)`，正文链接 16px。同一项在 canvas 上 12/12 全部通过，只在更亮的 surface 上失败。
+
+**根因是语义越界。** `--sky` 是按钮面（cap），只保证与 `--on-accent` 的对比，被拿去当正文链接色属于超范围使用。harbor/night 10.9、classic/night 8.9 通过只是因为那两个预设的 `--sky` 碰巧够亮，不是设计保证。
+
+### 5. 修复
+
+**类型 A：把 `soft` 加进 `muted` 的对比参照数组。** 日间与夜间各一处 `ensureContrastEither(..., [canvas, surface, soft], AA_TEXT, ...)`。同时把 `soft` 提成局部常量，免得在 return 里再算一次与求解用的不是同一个值。
+
+**类型 B：新增 `--link` token，正文链接不再复用按钮色。** 日间从原来的 `shade(p3, 0.45)` 起、夜间从 `tint(p3, 0.25)` 起，都对 `[canvas, surface, soft]` 求解到 AA。CSS 里 `.prose-playbook a` 改成 `color: var(--link)`，**主题分支整个删掉** —— 日夜两套各有一份 `--link`，不再需要 `:root[data-theme='night']` 那条覆盖。
+
+### 6. 一次差点引入的回归：`--ink` 不能加 soft
+
+第一版修复里我把 `soft` 也加进了 `--ink` 的 7:1 参照数组，理由是「同一个道理」。跑完整 token 对比才发现：**tide/night 与 sunrise/night 的 `--ink` 被一路提亮到纯白**（`#fefcf8` → `#ffffff`、`#fdf6e9` → `#ffffff`），连带 `--line` / `--grid` 的 rgba 也跟着变。
+
+原因很简单：`--soft` 上的正文只出现在代码块里，**字号 0.875rem 是非大号字，7:1 对它本来就不适用**（按 4.5 早就通过）。强行要求只会白白丢掉色相。已回退，并把这条理由写进代码注释。
+
+**这件事的方法论意义**：一行「顺手也加上」的改动，靠 typecheck 和截图都发现不了（纯白与近白在截图上几乎无差别），只有**逐 token 比对新旧派生值**才能暴露。
+
+### 7. 验证
+
+**审计脚本重跑：`TOTAL=192 FAILCOUNT=0`。** 最紧的一项 sunrise/night `--link` on `--soft` = 4.51（要求 4.5）。
+
+**逐 token 等价性：`SAME=265 CHANGED=11 ADDED=12`。** `CHANGED_KEYS=--muted` 恰好 11 个（就是那 11 项失败），`ADDED_KEYS=--link` 12 个（6 套 × 日夜）。`--ink`、`--focus`、`--coral/pink/cream/mint/sky/lilac`、`--on-accent`、`--line`、`--grid` 全部逐字节不变 —— **按钮的 12 项、正文的 12 项、焦点环的 12 项都不可能回归。**
+
+`npm run typecheck` 退出码 0。
+
+### 8. 未覆盖
+
+- `.tag-chip` 选中态的 `--ink` on `color-mix(in srgb, var(--pink) 34%, var(--surface))` 仍未算 —— 需要实现 color-mix 的求解，不是拒绝改，是这次没做。
+- 半透明 `--line` / `--grid` 叠色后的边框对比度未算（非文字，WCAG 无硬性要求）。
+- `--base` 与 cap 的落差未按 3:1 算 —— 它是结构不是文字。
+- 本轮是 token 级计算，未采集浏览器实际 computed style。
+- 390px 移动端本轮仍未验证。
+
+### 9. 一条值得记住的结论
+
+**「全部通过」和「构造上保证通过」是两回事。** 审计前的 177 项通过里，有相当一部分是「这几套预设碰巧够」，而不是「派生层保证它够」—— `--sky` 链接色就是典型：12 套里 8 套通过，但那 8 套只是运气。修完之后，链接色改成了对三层底色统一求解，通过才变成构造出来的保证。
 所以这里的选择不是「CodeMirror 比 TipTap 好」，而是：**当源码本身就是产品的数据格式时，编辑器应当编辑源码，而不是编辑它的某个投影。**

@@ -286,6 +286,9 @@ export function deriveLightTokens(colors: readonly string[]): PaletteTokens {
   // 画布：次强调色的极浅版，带一点色相，不是死白。
   const canvas = tint(p2, 0.95)
   const surface = tint(p2, 0.985)
+  // 浅底块：引用块、代码块、表头、标签 chip、空状态提示的底色。
+  // 它比 surface 更深，是文字实际会落到的最深一层背景。
+  const soft = tint(p2, 0.84)
 
   // 正文：从最深的槽位再压暗，然后强制达到 AAA 级对比（7:1）。
   // 同时对 canvas 与 surface 求解 —— 文字两个背景上都会出现。
@@ -293,7 +296,21 @@ export function deriveLightTokens(colors: readonly string[]): PaletteTokens {
 
   // 次要文字：以「正文与画布的中点」为起点，再强制达到 AA（4.5:1）。
   // 起点用中点而不是固定往白里混，是因为浅色卡上往白混会直接糊掉。
-  const muted = ensureContrastEither(mix(ink, canvas, 0.45), [canvas, surface], AA_TEXT, 'darker')
+  //
+  // 第三个参照是 soft（D-33）。之前只保证 canvas 与 surface，实测 6 套预设
+  // × 日夜两态里有 11 个组合在 soft 上掉到 3.74~4.41（要求 4.5）——
+  // 因为 soft 比 surface 更深，深色文字在它上面反而更难读。
+  const muted = ensureContrastEither(
+    mix(ink, canvas, 0.45),
+    [canvas, surface, soft],
+    AA_TEXT,
+    'darker',
+  )
+
+  // 正文链接色（D-33）：起点仍是「第三强调色压暗」，与原来的 --sky-base 同源，
+  // 但改成对三种底色求解。夜间不能复用 --sky —— 那是按钮面，只保证与
+  // --on-accent 的对比，拿去当链接色时实测只有 3.57~3.71。
+  const link = ensureContrastEither(shade(p3, 0.45), [canvas, surface, soft], AA_TEXT, 'darker')
 
   // 按钮面上的文字：从最深槽位压暗。
   //
@@ -306,10 +323,11 @@ export function deriveLightTokens(colors: readonly string[]): PaletteTokens {
     // ---- 中性层 ----
     '--canvas': toHex(canvas),
     '--surface': toHex(surface),
-    '--soft': toHex(tint(p2, 0.84)),
+    '--soft': toHex(soft),
     '--shell': toHex(tint(p1, 0.72)),
     '--ink': toHex(ink),
     '--muted': toHex(muted),
+    '--link': toHex(link),
     '--line': alpha(p5, 0.12),
     '--grid': alpha(p5, 0.08),
     // 焦点环必须能在画布上看清（WCAG 非文本对比 3:1）。
@@ -370,10 +388,29 @@ export function deriveNightTokens(colors: readonly string[]): PaletteTokens {
   // 同样钉上限，否则 canvas 刚好处在 0.16 时 surface 会超到 0.19，7:1 就保不住（实测 6.01）。
   const surface = ensureMaxLuminance(tint(canvas, 0.08), 0.16)
 
+  const soft = tint(canvas, 0.14)
+
   // 夜间 surface 比 canvas 亮（提亮 8%），所以最差情况是 surface，
   // 不是 canvas。两个都传进去，保证文字在哪一层上都达标。
+  //
+  // 为什么不把 soft 也加进来：soft 上的正文只出现在代码块里，字号 0.875rem
+  // 是非大号字，AAA 7:1 对它不适用（按 4.5 本来就全部通过）。真加进来会让
+  // tide / sunrise 两套预设的 --ink 被一路提亮到纯白，白白丢掉色相。
   const ink = ensureContrastEither(tint(p2, 0.9), [canvas, surface], 7, 'lighter')
-  const muted = ensureContrastEither(mix(canvas, ink, 0.6), [canvas, surface], AA_TEXT, 'lighter')
+  // muted 加 soft（D-33）：这是真实配对的真实要求 —— 引用块、标签 chip、
+  // 空状态提示都是 11~14px 的 --muted on --soft。夜间 soft 是三层里最亮的一层，
+  // 也是 --muted 的最差情况。
+  // muted 也加 soft（D-33）：晚间 soft 是三层里最亮的一层，也是最差情况。
+  const muted = ensureContrastEither(
+    mix(canvas, ink, 0.6),
+    [canvas, surface, soft],
+    AA_TEXT,
+    'lighter',
+  )
+
+  // 正文链接色（D-33）：夜间不直接用 --sky（那是按钮面），而是把第三强调色提亮到
+  // 在 canvas / surface / soft 上都达 AA。
+  const link = ensureContrastEither(tint(p3, 0.25), [canvas, surface, soft], AA_TEXT, 'lighter')
 
   // 与日间同理：--on-accent 的对照背景是按钮面，不对 canvas 加约束。
   const onAccent = shade(p5, 0.34)
@@ -381,10 +418,11 @@ export function deriveNightTokens(colors: readonly string[]): PaletteTokens {
   return {
     '--canvas': toHex(canvas),
     '--surface': toHex(surface),
-    '--soft': toHex(tint(canvas, 0.14)),
+    '--soft': toHex(soft),
     '--shell': toHex(tint(p1, 0.18)),
     '--ink': toHex(ink),
     '--muted': toHex(muted),
+    '--link': toHex(link),
     '--line': alpha(ink, 0.14),
     '--grid': alpha(ink, 0.08),
     '--focus': toHex(ensureContrast(tint(p3, 0.25), canvas, AA_LARGE, 'lighter')),
