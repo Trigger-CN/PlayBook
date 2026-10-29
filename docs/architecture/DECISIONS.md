@@ -3895,3 +3895,224 @@ const hasToc = toc.length > 0
 还有一条工具层教训：`File.Edit` 的行范围又一次没有覆盖完整语法单元（把
 `<div className="min-w-0">` 一起吞掉，`TC=2`）。这是本项目**第三次**因同一条纪律出错，
 已当场 `npm run typecheck` 捕获并补回。删除型编辑之后必须立刻 typecheck，不能攒着。
+
+---
+
+## D-37 浅色模式按钮侧壁过重：按「与按钮面的落差」反解侧壁
+
+### 1. 需求
+
+用户原话：
+
+> 浅色模式下的主页默认配色有些不协调，尤其是按钮的侧面阴影
+
+两处措辞都需要先翻译成可测量的量，否则改完无法证明改对了，也无法知道有没有把夜间调坏：
+
+- 「浅色模式」—— 只针对 `data-theme='light'`，默认预设 `classic`。
+- 「按钮的侧面阴影」—— 在本项目里**不是** CSS `box-shadow`，而是 `.toy-button` 外层元素的 `background: var(--base)`，即被按钮面遮住、按下去会露出来的那块深色侧壁（D-23 确立的结构，见本文件 12 节）。`.toy-card` 的 `box-shadow: 0 8px 0 var(--card-base-color)` 与页头品牌标的 `box-shadow: 0 6px 0 var(--coral-base)` 同源，一并受影响。
+
+用户说的是「主页」，但配色是全局 token，改动必然波及全站，因此验证必须覆盖主页之外的页面。
+
+### 2. 先实测再动手
+
+用 CDP 直连无头 Edge 对用户正在运行的 dev server 做只读探测（1440×1600）。classic / light 的六个色对实测：
+
+| 色对 | cap（按钮面） | base（侧壁） | cap/base | cap/canvas | **base/canvas** |
+|---|---|---|---|---|---|
+| coral | `#ff656c` | `#6b2a2d` | 3.68 | 2.81 | **10.33** |
+| pink | `#ffa0a4` | `#803336` | 4.42 | 1.91 | **8.43** |
+| cream | `#e4f9f1` | `#487c69` | 4.38 | 1.08 | 4.72 |
+| mint | `#82e2bf` | `#487c69` | 3.11 | 1.42 | 4.72 |
+| sky | `#8dd1ff` | `#4e738c` | 3.06 | 1.62 | 4.96 |
+| lilac | `#d1afc4` | `#634e5b` | 3.84 | 1.94 | 7.44 |
+
+夜间同项：`base/canvas` 全部落在 **1.01~2.45**（classic/coral 1.37、classic/pink 1.50、classic/cream 2.45）。
+
+把 6 套预设 × 6 色对 × 日夜两态共 72 组全量跑一遍：
+
+- **light：36/36 全部 `base/canvas` > 4.5**，最高 harbor/coral 13.93、ember/coral 11.86。
+- **night：0/36 超过 4.5**，全部 1.01~2.45。
+
+### 3. 根因
+
+**根因一：同一个 `shade` 系数在明暗两端的含义完全不同。**
+
+日间用 `shade(p1, 0.58)` 这类固定比例，只知道「往黑里混多少」，不知道混出来的颜色在画布上有多重。浅色画布（`#f9fefc`）上混 0.58 立刻产生 10 的落差；深色画布（`#160e16`）上混 0.7 也只有 1.4。**系数不是强度，对比度才是强度。** 于是同一套「立体」视觉语言，日夜两态的实际强度差约 7 倍 —— 浅色下侧壁读起来是一道黑边，而不是「一实体块的暗面」。
+
+**根因二：`base/canvas` 不能独立于 `cap` 压低（关键，推翻了最初的假设）。**
+
+三个量存在恒等关系：
+
+```
+base/canvas = cap/canvas × cap/base
+```
+
+推导：`base/canvas = (L_canvas+0.05)/(L_base+0.05)`，`cap/base = (L_cap+0.05)/(L_base+0.05)`，两者相除即得 `(L_canvas+0.05)/(L_cap+0.05) = cap/canvas`。
+
+所以在**不动按钮面**的前提下，想让侧壁在画布上变轻，唯一可调的就是「面与壁的落差」`cap/base`。这直接否定了最初「把日间 `base/canvas` 调到与夜间同量级的 2.5~5」的想法：coral 的 `cap/canvas` 是 2.81，即使 `cap/base` 压到 2.0，`base/canvas` 仍是 5.63。**该目标在数学上不可达**，必须改换表述 —— 正确的目标是「六个色对的 `cap/base` 统一，且不低于设计要求的 2:1」。
+
+**根因三：`cream` 按钮面与画布几乎同色（`cap/canvas = 1.08`），这是设计固有张力，不是本轮缺陷。**
+
+`--cream` 定义为 `tint(p2, 0.78)`（次强调色的极浅版），用途是「标签、徽标、浅底块」。要让它与画布有 1.5 的辨识度，得把 tint 降到 0.05，那时它已等同 `--mint`，cream 变体失去存在意义。所以「快捷入口按钮面看不见」是**使用层**问题（把极浅版当按钮面用），不是 token 层问题；它也确实解释了为什么用户会觉得该处侧壁特别抢眼 —— 侧壁是那些按钮上唯一可见的形体元素。本轮不动使用方式，只把侧壁重量收敛到与其他色对一致。
+
+### 4. 改法
+
+只改 `lib/theme/palette-core.ts` 的 `deriveLightTokens`，**夜间一行未动**。
+
+新增常量：
+
+```ts
+/** 侧壁与按钮面之间应有的对比度（D-37）：设计文档要求 ≥2:1，这里留 10% 余量。
+ * 同时要求六个色对**统一**取这个值 —— 侧壁轻重不一致本身就是「不协调」。 */
+const WALL_CONTRAST = 2.2
+```
+
+新增函数（按与按钮面的落差反解，而不是猜混合比例）：
+
+```ts
+function wallOn(source: Rgb, cap: Rgb): Rgb {
+  const wall = ensureContrast(shade(source, 0.2), cap, WALL_CONTRAST, 'darker')
+  // 对比度是对称的，只求解数值分不出「面亮壁暗」与「面暗壁亮」。
+  // 侧壁是按钮面下方的实体，物理上必须更暗（D-23 第 4 条不变量），
+  // 因此方向不成立时从更深的起点重解。
+  if (luminance(wall) < luminance(cap)) return wall
+  return ensureContrast(shade(source, 0.6), cap, WALL_CONTRAST, 'darker')
+}
+```
+
+六个按钮面提成中间变量（侧壁需要拿到按钮面的实际颜色），六个 `--*-base` 改用 `wallOn`：
+
+```ts
+const capCoral = capOn(p1, onAccent)
+const capPink = capOn(tint(p1, 0.38), onAccent)
+const capCream = capOn(tint(p2, 0.78), onAccent)
+const capMint = capOn(p2, onAccent)
+const capSky = capOn(p3, onAccent)
+const capLilac = capOn(tint(mix(p1, p3, 0.5), 0.2), onAccent)
+```
+
+```ts
+'--coral': toHex(capCoral),
+'--coral-base': toHex(wallOn(p1, capCoral)),
+'--pink': toHex(capPink),
+'--pink-base': toHex(wallOn(p1, capPink)),
+'--cream': toHex(capCream),
+'--cream-base': toHex(wallOn(p2, capCream)),
+'--mint': toHex(capMint),
+'--mint-base': toHex(wallOn(p2, capMint)),
+'--sky': toHex(capSky),
+'--sky-base': toHex(wallOn(p3, capSky)),
+'--lilac': toHex(capLilac),
+'--lilac-base': toHex(wallOn(mix(p1, p3, 0.5), capLilac)),
+```
+
+先压暗 20% 再求解，是因为源色本身可能很浅（例如 harbor 的 `#bfad5a`），从原色出发需要混很多才够 2.2。
+
+**没有做的事**：
+
+- 不改 `deriveNightTokens`。夜间 `cap/base` 3.93~8.10、`base/canvas` 1.01~2.45 正是「暗面」该有的量级，改它等于把对的改成错的。
+- 不改 `--shell`。classic 日间 `shell/canvas = 1.32`（两块大面板几乎融进画布）确实存在，但它与侧壁过重在视觉上互相放大；侧壁变浅后挤压感明显缓解。动 shell 会改变触感面板与配色实验室两块大面板的观感，超出用户点名的范围，记为**未改项**。
+- 不改 6 个 cap 的派生系数，不改 `config/palette.ts` 的预设色值，不改 `app/globals.css` 的任何一行。
+- 不改 `.tag-chip` 的选中态、不改 `.toy-card` 的 8px 底座厚度。
+
+### 5. 验证
+
+**Node 侧全量（6 套 × 6 色对 × 日夜 = 72 组）**
+
+改后 classic / light：
+
+| 色对 | cap | base | cap/base | **base/canvas** | base/canvas 变化 |
+|---|---|---|---|---|---|
+| coral | `#ff656c` | `#9f3f43` | 2.24 | 6.31 | 10.33 → 6.31 |
+| pink | `#ffa0a4` | `#cc5156` | 2.22 | 4.22 | 8.43 → 4.22 |
+| cream | `#e4f9f1` | `#68b599` | 2.21 | 2.38 | 4.72 → 2.38 |
+| mint | `#82e2bf` | `#55947d` | 2.29 | 3.48 | 4.72 → 3.48 |
+| sky | `#8dd1ff` | `#5c89a7` | 2.27 | 3.69 | 4.96 → 3.69 |
+| lilac | `#d1afc4` | `#8f7083` | 2.21 | 4.28 | 7.44 → 4.28 |
+
+全 36 组日间里，`cap/base` 有 29 组落在 2.20~2.30；4 组落在 2.49~2.90（源色本身很浅，压暗 20% 后已足够深，`ensureContrast` 起点即达标，未继续混合）；3 组 cream 例外：tide 2.60、sunrise 2.72、meadow 3.30、ember 5.25 —— cream 的 `cap` 极浅，`wallOn` 需要一路压到很深的源色，而 `ensureContrast` 的 0.02 步长在深色段一格跨度过大。ember 的 5.25 是全表最高值，仍远低于改前日间的 10~14。
+
+**不变量断言（72 项，全部通过）**
+
+| 项 | 门槛 | 实测 |
+|---|---|---|
+| `--on-accent` vs 6 个 cap | ≥ 4.5 | `MIN_FG=4.526781 @ ember/light/lilac`，`FAIL_FG=0` |
+| `cap` vs `base`（立体厚度） | ≥ 2.0（设计文档 2:1） | `MIN_WALL=2.204233 @ harbor/light/lilac`，`FAIL_WALL=0` |
+| `base` vs `canvas` | 仅记录 | `MIN=1.005140`（meadow/night/lilac）、`MAX=8.249006`（ember/light/sky） |
+| `TOTAL_CHECKS` | 72 | 72 |
+
+**token 回归守卫**
+
+`diff-tokens-d34.mjs` 第一次跑出 `CHANGED=0`，与本轮实际改动矛盾 —— 查明是它的输入 `pc-new.mjs` 仍是 D-34 时期的旧副本（`wallOn` 命中数 0），拿旧版本与旧版本比必然全等。**这是假阴性，不能当证据。** 重建基线（`git show HEAD:lib/theme/palette-core.ts` → `pc-old.ts`，工作区 → `pc-new.ts`，各自转译）后重跑：
+
+```
+SAME=348
+CHANGED=36
+ADDED=0
+REMOVED=0
+CHANGED_KEYS=--coral-base,--pink-base,--cream-base,--mint-base,--sky-base,--lilac-base
+REMOVED_KEYS=(none)
+```
+
+`CHANGED=36` 恰为 6 套 × 6 色对，全部 `*/light`，全部是 `--*-base`；**夜间 36 组一行未变**；`REMOVED=0` 说明没有 token 丢失。
+
+**构建与路由类型**
+
+隔离副本（`.me/buildcheck` + junction + 3100 端口，全程未碰用户 dev server 的 `.next`）：
+
+| 项 | 结果 |
+|---|---|
+| `next build` | `BUILD=0`，`Compiled successfully in 55s` |
+| 静态生成 | `Generating static pages (13/13)` |
+| `PRERENDER_ROUTES` | **10** |
+| `DYNAMIC_ROUTES` | **2**（`/posts/[slug]`、`/timeline/[id]`） |
+
+与 D-35 / D-36 基线完全一致，公开页仍为 Static / SSG。路由类型取自 `.next/prerender-manifest.json` 的键列表，不用 build 日志里的图形字符（`○ ● ƒ` 经 PowerShell 重定向与终端转码后会变成 `鈼?`，无法可靠区分）。
+
+**回归扫描（对 3100 生产实例）**
+
+| 脚本 | 结果 |
+|---|---|
+| `scan-admin` | `TOTAL_NODES=1242 FAIL_NODES=0 GROUPS=0`，8 页 × 日夜 |
+| `scan-shiki` | 日 `TOKENS=16 FAIL=0`、夜 `TOKENS=16 FAIL=0` |
+| `probe-form-controls` | `TOTAL_CONTROLS=66 FAIL_CONTROLS=0`，`color-scheme` 日夜正确 |
+
+`TOTAL_NODES` 比 D-36 的 1244 少 2，是文章页内容变化所致（本轮未改任何后台页面结构），非回归。
+
+**其它页面与移动端（3100 生产实例）**
+
+| 页面 | `--coral-base` | 横向溢出 |
+|---|---|---|
+| `/posts` | `#9f3f43` | false |
+| `/about` | `#9f3f43` | false |
+| `/timeline` | `#9f3f43` | false |
+| `/stats` | `#9f3f43` | false |
+| `/posts/playful-recorder` | `#9f3f43` | false |
+| `/admin/login` | `#9f3f43` | false |
+
+390px（`Emulation.setDeviceMetricsOverride`，不用 `--window-size=390`）：
+
+- 主页：`hscroll=false`，`.page-shell` 宽 **362px**（左 14 / 右 376），按钮高 49px（≥44 触控目标）
+- 文章列表：`hscroll=false`，`.page-shell` 宽 362px，按钮高 49px
+
+**观感确认（逐张 `Image.View`，不是只看路径）**
+
+主页 light 三段 + night 首屏、4 张按钮特写（大按钮 / 快捷入口 cream / 页头 / 文章卡）、文章列表 / 文章详情 / 登录页、移动端 2 张 —— 共 14 张。确认：侧壁由接近黑边的深暗红变成同色相的中等暗面；夜间画面与改前逐像素一致；cream 快捷入口的侧壁不再是唯一可见的形体元素。
+
+### 6. 未覆盖
+
+- `--shell` 日间 `shell/canvas = 1.32`（classic）未改，见第 4 节。
+- `cream` 按钮面与画布 `cap/canvas = 1.08` 未改 —— 属使用层问题，见第 3 节。
+- `.tag-chip` 选中态、`--line` / `--grid` 半透明边框叠色后的对比度仍未计算（D-33 遗留）。
+- 未测 Firefox / Safari。派生全部在构建期完成，与浏览器无关，理论上无差异。
+- 未测真实触屏与屏幕阅读器。
+
+### 7. 一条值得记住的结论
+
+**「把观感翻译成数字」之后，还要检查这个数字是不是真能独立调整。**
+
+本轮最初的目标是「让日间 `base/canvas` 降到与夜间同量级」。这个目标听起来完全合理，量化也到位，但它忽略了一个恒等式：`base/canvas = cap/canvas × cap/base`。在按钮面不动的前提下，侧壁在画布上的重量并不能单独压低 —— 它被按钮面钉住了。如果不先验证这个自由度，就会陷入「系数一降再降、`cap/base` 却塌到 1、按钮面与侧壁再也分不清」的死胡同，而 `base/canvas` 仍达不到目标。
+
+正确的目标不是「让某个数字到达某个值」，而是「找到一个实际可调的自由度，并对它求解」。本轮的自由度是 `cap/base`，解法是 `wallOn`：不再猜混合比例，而是按与按钮面的落差反解到设计文档要求的 2:1（取 2.2 留余量）。
+
+顺带记下第二次踩到的同类陷阱：**回归守卫自己也可能失效。** `diff-tokens-d34.mjs` 报 `CHANGED=0` 时，第一反应是「改动没生效」；实际是它的基线输入是 D-34 时期的旧副本，拿旧版本与旧版本比必然全等。守卫的输入必须与被测对象同步刷新，否则它会安静地给出「一切正常」——这比报错更危险。

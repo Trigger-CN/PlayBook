@@ -45,6 +45,9 @@ const BLACK: Rgb = { r: 0, g: 0, b: 0 }
 const AA_TEXT = 4.5
 /** 大号文字与图形元素的最低对比度。 */
 const AA_LARGE = 3
+/** 侧壁与按钮面之间应有的对比度（D-37）：设计文档要求 ≥2:1，这里留 10% 余量。
+ * 同时要求六个色对**统一**取这个值 —— 侧壁轻重不一致本身就是「不协调」。 */
+const WALL_CONTRAST = 2.2
 
 function parseHex(hex: string): Rgb {
   const raw = hex.trim().replace(/^#/, '')
@@ -258,6 +261,24 @@ function capOn(color: Rgb, onAccent: Rgb): Rgb {
 }
 
 /**
+ * 按钮侧壁（底座）：按「与按钮面的落差」反解，而不是猜一个混合比例。
+ *
+ * 为什么改（D-37）：固定比例 `shade(色, 0.58)` 只知道往黑里混多少，不知道混出来
+ * 在画布上有多重。同一条思路在浅色画布上得到 base/canvas = 10.33，在深色画布上
+ * 只有 1.37 —— 浅色模式里侧壁于是一道黑边。而 `base/canvas = cap/canvas × cap/base`：
+ * 在按钮面不动的前提下，唯一能调的就是「面与壁的落差」，所以直接对这个落差求解。
+ * 先压暗 20% 再求解：源色很浅时（例如 `#bfad5a`）这是必要的第一步。
+ */
+function wallOn(source: Rgb, cap: Rgb): Rgb {
+  const wall = ensureContrast(shade(source, 0.2), cap, WALL_CONTRAST, 'darker')
+  // 对比度是对称的，只求解数值分不出「面亮壁暗」与「面暗壁亮」。
+  // 侧壁是按钮面下方的实体，物理上必须更暗（D-23 第 4 条不变量），
+  // 因此方向不成立时从更深的起点重解。
+  if (luminance(wall) < luminance(cap)) return wall
+  return ensureContrast(shade(source, 0.6), cap, WALL_CONTRAST, 'darker')
+}
+
+/**
  * 五个源色。
  *
  * 原签名是 `config/palette.ts` 的 `PaletteColors` 五元组；这里刻意放宽成
@@ -319,6 +340,16 @@ export function deriveLightTokens(colors: readonly string[]): PaletteTokens {
   // 夜间整套按钮面颜色全变（384/384 等价性断言当场挂了 48 项）。
   const onAccent = shade(p5, 0.34)
 
+  // 六个按钮面（cap）先算成中间变量（D-37）：侧壁要按「与按钮面的落差」反解，
+  // 必须先拿到按钮面的实际颜色；原先每一对都在 return 里各写一次表达式，
+  // 侧壁就只剩「往黑里混多少」一个自由度，无法约束它在画布上的重量。
+  const capCoral = capOn(p1, onAccent)
+  const capPink = capOn(tint(p1, 0.38), onAccent)
+  const capCream = capOn(tint(p2, 0.78), onAccent)
+  const capMint = capOn(p2, onAccent)
+  const capSky = capOn(p3, onAccent)
+  const capLilac = capOn(tint(mix(p1, p3, 0.5), 0.2), onAccent)
+
   return {
     // ---- 中性层 ----
     '--canvas': toHex(canvas),
@@ -336,29 +367,30 @@ export function deriveLightTokens(colors: readonly string[]): PaletteTokens {
     '--on-accent': toHex(onAccent),
 
     // ---- 六个语义色对：cap（亮面）+ base（深底座）----
+    // 侧壁由 wallOn 按「与按钮面的落差」反解（D-37），不再用固定 shade 比例。
     // coral = 主强调色，承担主 CTA
-    '--coral': toHex(capOn(p1, onAccent)),
-    '--coral-base': toHex(shade(p1, 0.58)),
+    '--coral': toHex(capCoral),
+    '--coral-base': toHex(wallOn(p1, capCoral)),
 
     // pink = 主强调色的柔和版，用于次级 CTA
-    '--pink': toHex(capOn(tint(p1, 0.38), onAccent)),
-    '--pink-base': toHex(shade(p1, 0.5)),
+    '--pink': toHex(capPink),
+    '--pink-base': toHex(wallOn(p1, capPink)),
 
     // cream = 次强调色的极浅版，用于标签、徽标、浅底块
-    '--cream': toHex(capOn(tint(p2, 0.78), onAccent)),
-    '--cream-base': toHex(shade(p2, 0.45)),
+    '--cream': toHex(capCream),
+    '--cream-base': toHex(wallOn(p2, capCream)),
 
     // mint = 次强调色本体
-    '--mint': toHex(capOn(p2, onAccent)),
-    '--mint-base': toHex(shade(p2, 0.45)),
+    '--mint': toHex(capMint),
+    '--mint-base': toHex(wallOn(p2, capMint)),
 
     // sky = 第三强调色本体，与焦点环同源
-    '--sky': toHex(capOn(p3, onAccent)),
-    '--sky-base': toHex(shade(p3, 0.45)),
+    '--sky': toHex(capSky),
+    '--sky-base': toHex(wallOn(p3, capSky)),
 
     // lilac = 主强调色与第三强调色的混合，取一个介于两者之间的色相
-    '--lilac': toHex(capOn(tint(mix(p1, p3, 0.5), 0.2), onAccent)),
-    '--lilac-base': toHex(shade(mix(p1, p3, 0.5), 0.5)),
+    '--lilac': toHex(capLilac),
+    '--lilac-base': toHex(wallOn(mix(p1, p3, 0.5), capLilac)),
 
     // ---- 代码高亮（D-34）----
     // 由派生层生成而非写在主题文件里：见 deriveCodeTokens 的注释。
