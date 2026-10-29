@@ -14,10 +14,10 @@ import { siteConfig } from '@/config/site'
  */
 export function SiteHeader() {
   return (
-    <header className="flex items-center justify-between gap-5 pb-6 pt-7">
+    <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-3 pb-6 pt-7 min-[360px]:gap-x-5">
       <Link
         href="/"
-        className="inline-flex items-center gap-[11px] font-display text-2xl font-bold"
+        className="inline-flex items-center gap-2 font-display text-xl font-bold min-[360px]:gap-[11px] min-[360px]:text-2xl"
       >
         <span
           aria-hidden="true"
@@ -32,7 +32,7 @@ export function SiteHeader() {
         </span>
         {siteConfig.name}
       </Link>
-      <div className="flex shrink-0 items-center gap-2.5 sm:gap-[18px]">
+      <div className="ml-auto flex shrink-0 items-center gap-2 min-[360px]:gap-2.5 sm:gap-[18px]">
         <SiteNav />
         {/*
           * 后台入口（决策 D-18：放在页面顶部而不是页脚）。

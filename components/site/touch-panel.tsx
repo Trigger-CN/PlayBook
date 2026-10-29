@@ -82,6 +82,27 @@ const END_ROOM_RATIO = 0.8
 const clampIndex = (index: number, detents: number) =>
   index < 0 ? 0 : index > detents - 1 ? detents - 1 : index
 
+/* ---------------- 窄屏检测（D-38） ---------------- */
+
+let compactQuery: MediaQueryList | null = null
+const getCompactQuery = () => {
+  if (!compactQuery && typeof window !== 'undefined') {
+    compactQuery = window.matchMedia(COMPACT_QUERY)
+  }
+  return compactQuery
+}
+
+function subscribeCompact(onChange: () => void) {
+  const mql = getCompactQuery()
+  if (!mql) return () => {}
+  mql.addEventListener('change', onChange)
+  return () => mql.removeEventListener('change', onChange)
+}
+
+function readCompactFromDom() {
+  return getCompactQuery()?.matches ?? false
+}
+
 /* ---------------- 颗粒度档位与旋钮档数 ---------------- */
 
 const GRANULARITY_LEVELS = [1, 2, 3, 4, 5] as const
@@ -137,6 +158,36 @@ const KNOB_DEPTH = 14
  */
 const KNOB_TICK_INNER = 116
 const KNOB_TICK_OUTER = 144
+/**
+ * 旋钮的窄屏尺寸（D-38）。
+ *
+ * 桌面值是 size 300 / disc 224 / tick 116..144 / depth 14。这些数字是**硬编码像素**，
+ * 容器不会因为父级变窄而缩小，于是 390px 手机上「两个滑块 88 + 88 + 旋钮 300 +
+ * 间距」需要 407px，而内容区只有 290px —— 旋钮被面板裁掉、滑块被挤出左边界。
+ *
+ * 为什么不用 `transform: scale`：缩放不改变布局尺寸，300px 的位置照样占着，
+ * 溢出一点没少。也不用 `zoom`：它在旧浏览器上 `getBoundingClientRect()` 的返回值
+ * 是否含缩放不一致，而 `rawFromPointer` 用这个矩形的中心算 atan2 角度，
+ * 一旦含缩放，指针角度会整体偏掉。所以老老实实换一套像素值。
+ *
+ * 比例统一取 0.7 后各自取整，D-27 的三条几何不变式在窄屏值上仍成立：
+ *   刻度内端 81 > 底面圆半径 157/2 = 78.5   （刻度整圈严格在外）
+ *   刻度外端 101 < 容器半径 210/2 = 105     （不超出容器）
+ *   顶面圆上移 5 后覆到 78.5 + 10 = 88.5 > 81（顶部刻度仍被顶面压住）
+ */
+const KNOB_COMPACT = {
+  size: 210,
+  disc: 157,
+  tickInner: 81,
+  tickOuter: 101,
+  depth: 10,
+  pointerTop: 10,
+  pointerLen: 32,
+  pointerW: 8,
+} as const
+
+/** 窄屏断点：与 Tailwind 的 `lg` 之前的区间一致，`lg`（1024px）起用桌面值。 */
+const COMPACT_QUERY = '(max-width: 1023px)'
 
 /** 旋钮刻度在改颗粒度时的淡出 → 换数量 → 淡入时长。 */
 const TICK_FADE_MS = 110
@@ -489,13 +540,24 @@ function DetentKnob({
   label,
   readout,
   onThresholdChange,
+  compact,
 }: {
   detents: number
   label: string
   readout: string
   /** 档位变化时上报 0..1 的「拨动难易度」（0 = 最费力，1 = 最轻）。 */
   onThresholdChange: (ease: number) => void
+  /** 窄屏用更小的一整套像素尺寸（见 KNOB_COMPACT）。 */
+  compact: boolean
 }) {
+  const knobSize = compact ? KNOB_COMPACT.size : KNOB_SIZE
+  const knobDisc = compact ? KNOB_COMPACT.disc : KNOB_DISC
+  const knobDepth = compact ? KNOB_COMPACT.depth : KNOB_DEPTH
+  const tickInner = compact ? KNOB_COMPACT.tickInner : KNOB_TICK_INNER
+  const tickOuter = compact ? KNOB_COMPACT.tickOuter : KNOB_TICK_OUTER
+  const pointerTop = compact ? KNOB_COMPACT.pointerTop : 14
+  const pointerLen = compact ? KNOB_COMPACT.pointerLen : 46
+  const pointerW = compact ? KNOB_COMPACT.pointerW : 12
   const id = useId()
   const knobRef = useRef<HTMLDivElement>(null)
   /** 已突破到的档位索引（整数）。 */
@@ -648,7 +710,7 @@ function DetentKnob({
     [tickDetents],
   )
   // 档数少时刻度加长加粗，档数多时收细，否则 36 档会连成一片。
-  const tickLen = KNOB_TICK_OUTER - KNOB_TICK_INNER
+  const tickLen = tickOuter - tickInner
   const tickW = tickDetents > 20 ? 4 : tickDetents > 10 ? 5 : 7
 
   return (
@@ -675,7 +737,7 @@ function DetentKnob({
         onPointerCancel={endDrag}
         onKeyDown={handleKeyDown}
         className="relative cursor-grab touch-none select-none active:cursor-grabbing"
-        style={{ width: KNOB_SIZE, height: KNOB_SIZE }}
+        style={{ width: knobSize, height: knobSize }}
       >
         {/* ① 底面圆（侧面阴影）：不随转动，比顶面低 KNOB_DEPTH/2。 */}
         <span
@@ -683,10 +745,10 @@ function DetentKnob({
           data-knob-base=""
           className="pointer-events-none absolute left-1/2 top-1/2 rounded-full"
           style={{
-            width: KNOB_DISC,
-            height: KNOB_DISC,
+            width: knobDisc,
+            height: knobDisc,
             background: 'var(--coral-base)',
-            transform: `translate(-50%, -50%) translateY(${KNOB_DEPTH / 2}px)`,
+            transform: `translate(-50%, -50%) translateY(${knobDepth / 2}px)`,
           }}
         />
         {/* ② 刻度环：圆心对准底面圆，夹在底面与顶面之间，所以内侧被顶面压住。
@@ -696,7 +758,7 @@ function DetentKnob({
           data-knob-ticks=""
           className="pointer-events-none absolute inset-0"
           style={{
-            transform: `translateY(${KNOB_DEPTH / 2}px)`,
+            transform: `translateY(${knobDepth / 2}px)`,
             opacity: tickVisible ? 1 : 0,
             transition: `opacity ${TICK_FADE_MS}ms ease`,
           }}
@@ -705,7 +767,7 @@ function DetentKnob({
             const deg = tickDetents > 1
               ? -KNOB_HALF_DEG + (mark / (tickDetents - 1)) * KNOB_SWEEP_DEG
               : 0
-            const dist = (KNOB_TICK_INNER + KNOB_TICK_OUTER) / 2
+            const dist = (tickInner + tickOuter) / 2
             const active = mark === index
             return (
               <span
@@ -730,17 +792,22 @@ function DetentKnob({
           data-knob-cap=""
           className="pointer-events-none absolute left-1/2 top-1/2 rounded-full"
           style={{
-            width: KNOB_DISC,
-            height: KNOB_DISC,
+            width: knobDisc,
+            height: knobDisc,
             background: 'var(--cream)',
-            transform: `translate(-50%, -50%) translateY(-${KNOB_DEPTH / 2}px) rotate(${visualDeg}deg)`,
+            transform: `translate(-50%, -50%) translateY(-${knobDepth / 2}px) rotate(${visualDeg}deg)`,
             transition: dragging ? 'none' : 'transform 260ms cubic-bezier(0.22, 1.4, 0.4, 1)',
           }}
         >
           {/* 指针：初始朝上，随档位偏转。实心色块，不描边。 */}
           <span
-            className="absolute left-1/2 top-[14px] h-[46px] w-[12px] -translate-x-1/2 rounded-full"
-            style={{ background: 'var(--coral-base)' }}
+            className="absolute left-1/2 -translate-x-1/2 rounded-full"
+            style={{
+              top: pointerTop,
+              height: pointerLen,
+              width: pointerW,
+              background: 'var(--coral-base)',
+            }}
           />
         </span>
       </div>
@@ -760,6 +827,13 @@ export function TouchPanel() {
     subscribeTheme,
     readThemeFromDom,
     () => 'light' as Theme,
+  )
+  // 窄屏（< lg）用更小的旋钮尺寸（D-38）。server snapshot 固定 false，
+  // 与 theme 同一套写法：首屏由客户端订阅纠正，不产生 hydration 不匹配。
+  const compact = useSyncExternalStore(
+    subscribeCompact,
+    readCompactFromDom,
+    () => false,
   )
   const [level, setLevel] = useState<GranularityLevel>(3)
 
@@ -846,38 +920,45 @@ export function TouchPanel() {
             </ToyButton>
           </div>
 
-          {/* ---- 右：两个滑块 + 旋钮 ---- */}
-          <div className="order-2 flex items-center justify-center gap-6 lg:shrink-0 lg:gap-7">
-            <DetentSlider
-              detents={GRANULARITY_LEVELS.length}
-              value={level - 1}
-              onChange={(index) => handleLevel(index)}
-              label="旋钮颗粒度"
-              valueText={(index) => {
-                const next = GRANULARITY_LEVELS[clampIndex(index, GRANULARITY_LEVELS.length)]
-                return `第 ${next} 档，共 5 档，旋钮 ${KNOB_DETENTS[next]} 格`
-              }}
-              topBadge="细"
-              bottomBadge="粗"
-              hint="上下拖动或按上下方向键改变旋钮的档位颗粒度，一共 5 档。"
-              threshold={threshold}
-            />
-            <DetentSlider
-              detents={2}
-              value={themeIndex}
-              onChange={handleThemeIndex}
-              label="明暗主题"
-              valueText={(index) => (index === 1 ? '夜间' : '日间')}
-              topBadge={<Icon name="dark_mode" size={14} />}
-              bottomBadge={<Icon name="light_mode" size={14} />}
-              hint="两档拨动开关，上为夜间、下为日间，与页头开关共用同一份主题设置。"
-              threshold={threshold}
-            />
+          {/* ---- 右：两个滑块 + 旋钮 ----
+              窄屏（< lg）纵向堆叠：上面一行两个滑块，下面旋钮。
+              桌面（lg）横向一行三列，与 D-26 的布局完全一致。
+              必须分两层：外层 flex-col 只管「左块 / 右块」两栏，
+              控件那一行是内层容器自己的方向。 */}
+          <div className="order-2 flex flex-col items-center justify-center gap-6 lg:flex-row lg:shrink-0 lg:gap-7">
+            <div className="flex items-center justify-center gap-6">
+              <DetentSlider
+                detents={GRANULARITY_LEVELS.length}
+                value={level - 1}
+                onChange={(index) => handleLevel(index)}
+                label="旋钮颗粒度"
+                valueText={(index) => {
+                  const next = GRANULARITY_LEVELS[clampIndex(index, GRANULARITY_LEVELS.length)]
+                  return `第 ${next} 档，共 5 档，旋钮 ${KNOB_DETENTS[next]} 格`
+                }}
+                topBadge="细"
+                bottomBadge="粗"
+                hint="上下拖动或按上下方向键改变旋钮的档位颗粒度，一共 5 档。"
+                threshold={threshold}
+              />
+              <DetentSlider
+                detents={2}
+                value={themeIndex}
+                onChange={handleThemeIndex}
+                label="明暗主题"
+                valueText={(index) => (index === 1 ? '夜间' : '日间')}
+                topBadge={<Icon name="dark_mode" size={14} />}
+                bottomBadge={<Icon name="light_mode" size={14} />}
+                hint="两档拨动开关，上为夜间、下为日间，与页头开关共用同一份主题设置。"
+                threshold={threshold}
+              />
+            </div>
             <DetentKnob
               detents={knobDetents}
               label="档位旋钮"
               readout={levelText}
               onThresholdChange={handleThresholdChange}
+              compact={compact}
             />
           </div>
         </div>

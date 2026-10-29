@@ -59,7 +59,7 @@ export async function ActivityFeed({ limit = 8 }: { limit?: number }) {
   }
 
   return (
-    <ol className="grid gap-2.5">
+    <ol className="grid grid-cols-1 gap-2.5">
       {entries.map((entry, index) => {
         const href = targetHref(entry.targetType, entry.targetId)
         const label = EVENT_LABELS[entry.eventType] ?? entry.eventType

@@ -4116,3 +4116,194 @@ REMOVED_KEYS=(none)
 正确的目标不是「让某个数字到达某个值」，而是「找到一个实际可调的自由度，并对它求解」。本轮的自由度是 `cap/base`，解法是 `wallOn`：不再猜混合比例，而是按与按钮面的落差反解到设计文档要求的 2:1（取 2.2 留余量）。
 
 顺带记下第二次踩到的同类陷阱：**回归守卫自己也可能失效。** `diff-tokens-d34.mjs` 报 `CHANGED=0` 时，第一反应是「改动没生效」；实际是它的基线输入是 D-34 时期的旧副本，拿旧版本与旧版本比必然全等。守卫的输入必须与被测对象同步刷新，否则它会安静地给出「一切正常」——这比报错更危险。
+
+---
+
+## D-38 手机浏览器下主页布局错乱：元素级取证，四处固有宽度
+
+### 1. 需求
+
+用户报告：「在手机浏览器下，主页布局会出现问题」。
+
+这条报告直接否定了上一轮（D-37）「390px 无横向溢出」的结论。D-37 是在 390px 下验过 `hscroll=false` 才收工的，而用户在真机上看到的却是坏的。因此本轮的第一件事不是改代码，而是先回答：**上一轮的检查为什么没发现？**
+
+### 2. 先实测再动手：上一轮的检查为什么是假阴性
+
+两层原因，彼此独立，任何一层单独存在都会让检查失效：
+
+1. **被裁切的溢出不会产生滚动条。** 触感面板的外层是 `<section class="relative overflow-hidden rounded-[34px] ...">`。`overflow: hidden` 把内部溢出直接裁掉，页面既没有横向滚动条，`documentElement.scrollWidth` 也可能不被撑开。凡是「元素在自己容器里溢出、而容器自己裁切」的情形，页面级 `hscroll` 天然看不见。
+2. **整数容差吃掉了 1px 的真相。** D-37 的判据是 `scrollWidth > clientWidth + 1`，而实测页面的真实溢出是 391 对 390 —— 差值恰好 1，被 `+1` 容差吞掉。容差本意是滤掉亚像素抖动，但它同时把「1px 系统误差级的真实溢出」一起滤掉了。
+
+结论：**对这套代码，页面级横向溢出不能作为移动端布局健康的证据。** 本轮改用元素级取证 —— 对每个可见元素同时量两件事：`getBoundingClientRect()` 相对视口的左右边界、相对父元素的左右边界；并对每个元素单独比较 `scrollWidth` 与 `clientWidth`。后者能把被 `overflow: hidden` 掩盖的溢出也照出来。
+
+### 3. 根因：四处，全部是「固有宽度大于可用宽度」
+
+#### 3.1 活动列表把整页撑到 391px 最小宽度（波及全站，最严重）
+
+`components/site/activity-feed.tsx` 原为 `<ol className="grid gap-2.5">`。
+
+单列 grid 的默认轨道是 `auto`，它按项目的 **min-content** 取宽。项目内是 `a.flex` 加 `span.min-w-0.truncate`，而 Tailwind 的 `truncate` 含 `white-space: nowrap`，于是长标题的 min-content 约为 377px，`li` 恒定 377px —— 320、360、390 三档实测**全都是 377**，与视口宽度无关。`14 + 377 = 391`，正是实测到的 `innerW` 与 `docScrollW`。
+
+这里有一个容易走错的岔路：给 `li` 加 `min-w-0` 无效。grid item 的 `min-width: auto` 由轨道的 `minmax()` 决定，不由项目自身决定。
+
+#### 3.2 触感面板控件行溢出 117px，旋钮被裁、滑块被挤出左边界
+
+`components/site/touch-panel.tsx` 的控件行原为 `order-2 flex items-center justify-center gap-6 ...`。外层 `flex-col` 只管「左块 / 右块」两栏，管不到右块内部的这一行，所以这一行**始终横排**。
+
+三个控件的宽度是硬编码像素：每个滑块轨道 `SLIDER_HIT_WIDTH = 88`，旋钮容器 `KNOB_SIZE = 300`。390px 视口下内容区只有 290px，需求约 407px，溢出 117px —— 被面板的 `overflow: hidden` 静默裁掉。
+
+实测（390 视口，`page-shell` 362）：
+
+| 元素 | clientW | scrollW | 溢出 |
+|---|---|---|---|
+| `section.relative overflow-hidden rounded-[34px] p-4` | 362 | 443 | 81（被裁） |
+| `div.rounded-[24px] p-5` | 330 | 427 | 97 |
+| `div.flex flex-col gap-7` | 290 | 407 | 117 |
+| `div.order-2 flex items-center justify-center gap-6` | 290 | 407 | 117 |
+
+元件级：旋钮组固定 300px，`l=157 r=457`（右溢 67）；滑块轨道 `l=-67 r=21`（左溢 67，半个滑块在屏幕外）。
+
+#### 3.3 页头在 320px 下固有宽度 319px
+
+`components/site/site-header.tsx`：品牌链接 161px + 页头横向间距 20px + 右侧组（主题开关 + 登录按钮，导航链接在 `sm` 以下本就 `hidden`）138px = **319px**，而 320px 视口的 `.page-shell` 只有 `min(100% - 28px, 1180px)` = **292px**。溢出 27px，把 `innerW` 顶到 333。
+
+这一处是**既有缺陷，不是本轮改动引入的**：改动前 320px 的 `innerW` 是 391，右侧组同样坐在 195..333。只是被 3.1 的更大溢出掩盖着。
+
+#### 3.4 配色实验室的五个色槽在窄屏把十六进制值裁掉
+
+`components/site/palette-lab.tsx` 原为 `mt-5 grid grid-cols-5 gap-2`。每个色槽是 `border-2 p-2`，共占去 20px 水平空间：
+
+| 视口 | 每列宽 | 内容宽 | 十六进制文本所需 | 结果 |
+|---|---|---|---|---|
+| 320 | 65.3 | 16 | 43 | 严重裁切 |
+| 390 | 88.7 | 30 | 43 | 仍被裁（`#FF656C` 显示为 `#FF656`） |
+
+390px 下同样被裁，说明这不是「只有极窄屏才有」的问题，而是 5 列在移动端根本放不下 7 个字符的等宽十六进制串。
+
+### 4. 改法
+
+四处都是「把固有宽度降到可用宽度以内」，方式各不相同，全部用现有断点体系，不新增 CSS 文件、不改 `app/globals.css`。
+
+#### 4.1 活动列表
+
+`grid` → `grid grid-cols-1 gap-2.5`。Tailwind 的 `grid-cols-1` 展开为 `repeat(1, minmax(0, 1fr))`，**那个 0 下限**才是起作用的部分：轨道下限归零后，轨道才能等于容器宽，而不是被内容撑到 min-content。
+
+#### 4.2 触感面板：两层结构 + 窄屏旋钮尺寸
+
+**结构**：控件区改成两层。外层 `flex flex-col items-center justify-center gap-6 lg:flex-row lg:shrink-0 lg:gap-7` 负责「窄屏堆叠 / 宽屏横排」；两个滑块再包进一个 `flex items-center justify-center gap-6` 子行。窄屏得到「滑块行 88+88+24=200」+「旋钮行 210」；`lg` 及以上 `lg:flex-row` 精确复现原来的一行三列，桌面观感不变。
+
+**尺寸**：新增 `KNOB_COMPACT`（桌面值 × 0.7 后逐项取整）：
+
+```
+size 210 / disc 157 / tickInner 81 / tickOuter 101
+depth 10 / pointerTop 10 / pointerLen 32 / pointerW 8
+```
+
+选择用 `useSyncExternalStore` + `matchMedia(COMPACT_QUERY)`，`COMPACT_QUERY = '(max-width: 1023px)'`，server snapshot 固定 `false`。选 1023 而不是某个随手值，是为了与 Tailwind `lg:` 停止生效的宽度对齐 —— 让 JS 的判断点和 CSS 的断点落在同一处，否则会在某个宽度区间出现「布局已经横排、旋钮还是小号」的错配。
+
+**D-27 三条几何不变式在窄屏值上复核**（这是换尺寸时最容易被破坏的东西）：
+
+- 刻度内端 81 > 底面圆半径 157/2 = 78.5 —— 刻度整圈严格在底面圆之外
+- 刻度外端 101 < 容器半径 210/2 = 105 —— 刻度不超出容器
+- 顶面圆上移 `depth/2 = 5` 后覆盖面到 78.5 + 10 = 88.5 > 81 —— 顶部刻度仍被顶面压住，三层结构成立
+
+**明确否决的两种做法**：
+
+- `transform: scale`：缩放不改变布局尺寸。300px 仍然占着 300px 的位置，溢出一点没少。
+- `zoom`：各引擎对「`getBoundingClientRect()` 是否包含缩放」的返回值不一致，而旋钮的 `rawFromPointer` 正是用这个矩形的中心算 `atan2` 求角度。一旦矩形含缩放，指针角度会整体偏掉 —— 手感的几何基础就被换掉了。
+
+#### 4.3 页头：窄档压缩 + 换行兜底
+
+- 页头：`gap-5` → `gap-x-3 gap-y-3`，并在 `min-[360px]` 起恢复 `gap-x-5`；同时加 `flex-wrap`，右侧组加 `ml-auto`。
+- 品牌：`text-2xl` → `text-xl`、`gap-[11px]` → `gap-2`，`min-[360px]:` 起恢复原值。
+- 右侧组：`gap-2.5` → `gap-2`，`min-[360px]:gap-2.5`。
+
+窄档所需：品牌 139 + 间距 12 + 右侧组 136 = **287 ≤ 292**。`flex-wrap` 是兜底 —— 字体度量在不同平台有细微差异，万一某一台机器算出来差几像素，它会换行右对齐，而不是溢出。`min-[360px]:` 保证 360 及以上完全保持原样。
+
+没有选择「把导航收进汉堡菜单」：导航链接在 `sm` 以下本来就是 `hidden`，320px 下右侧组只有主题开关和登录按钮，两者都是必需的常驻控件，收进菜单反而增加一次点击。这不是一次导航交互的改动。
+
+#### 4.4 配色实验室：窄屏三列
+
+`grid-cols-5` → `grid-cols-3`，`min-[480px]:grid-cols-5`。
+
+480 这个阈值不是猜的：五列在 480px 时每列 68px、内容宽 48px，刚好容下 48px 的十六进制文本（实测 `maxSpanOver=0`）。320–414 一律三列（3+2 两行），每列内容宽 45–77px，全部放得下。
+
+#### 4.5 没有做的事
+
+- `app/globals.css` 零改动。`.page-shell` 的 `min(100% - 28px, 1180px)` 在 320px 下给出 292px，是合理值，问题不在外壳。
+- 未改 `config/palette.ts`、未改任何配色 token（D-37 已闭环）。
+- 未改 `DetentSlider` 的尺寸常量与手感状态机（`anchor`/`creep`/`THRESHOLD_MIN`/`CREEP_RATIO` 全部原值）。
+- 未给 `.stat` 做任何处理。414px 下 `.stat` 报 `sw=204 cw=184 ox=hidden`，看似溢出；读 CSS 可知那是 `::after` 装饰圆故意放在 `right:-20px`，`.stat` 本来就是 `overflow: hidden` —— 这正是它存在的理由，不是缺陷。
+- 未在窄屏改导航交互（理由见 4.3）。
+
+### 5. 验证
+
+**类型**：`npm run typecheck` 在每次改动后执行，`$LASTEXITCODE=0`。
+
+**元素级边界（四档视口，CDP `Emulation.setDeviceMetricsOverride`）**
+
+改前：320/360/390 三档 `innerW` 均为 391。
+
+改后（`probe-mobile-after2.log`）：
+
+| 视口 | innerW | viewportOverCount | parentOverCount |
+|---|---|---|---|
+| 320 | 320 | 0 | 0 |
+| 360 | 360 | 0 | 0 |
+| 390 | 390 | 0 | 0 |
+| 414 | 414 | 0 | 0 |
+
+**页头（`probe-compact-f38b/c/d.log`，五档）**
+
+320：`headerW=292`、`headerScrollW=292`、品牌 `l=14 r=153 w=139`、右侧组 `l=170 r=306 w=136`。
+340/360/375/390：`headerScrollW == headerW`（312/332/347/362），品牌在 ≥360 恢复 161px、右侧组恢复 138px，与改动前逐像素一致。
+
+**色槽（`probe-swatch2-f38.log`，九档 320…1440）**
+
+九档 `maxOver` 全为 0。320 档仅 `#8DD1FF` 一个 span 溢出 1px（`sw=46 cw=45`），其余全部为 0。1440 档列宽 `208.797px × 5`，与改动前完全一致 —— 桌面零回归。
+
+**隔离副本生产构建**
+
+`robocopy` → `mklink /J node_modules` → 副本内 `next build`：`BUILD_EXIT=0`，`Compiled successfully in 44s`，`Generating static pages (13/13)`。
+
+路由类型从 `.next/prerender-manifest.json` 读，**不从构建日志的符号读**（`○ ● ƒ` 经 PowerShell 重定向会变成乱码）：`routes` 10 个键（`/_not-found`、`/robots.txt`、`/about`、`/sitemap.xml`、`/rss.xml`、`/`、`/timeline`、`/stats`、`/posts/pan`、`/posts/playful-recorder`），`dynamicRoutes` 2 个键（`/timeline/[id]`、`/posts/[slug]`）—— 与 D-35/D-36 基线完全相同，没有退化。
+
+**三项回归扫描（对 3100 端口的生产构建实例）**
+
+- `scan-admin`：`TOTAL_NODES=1242 FAIL_NODES=0 GROUPS=0`（8 个后台页 × 明暗两态）
+- `scan-shiki`：`/posts/playful-recorder` 明暗两态各 `TOKENS=16 FAIL=0`
+- `probe-form-controls`：`TOTAL_CONTROLS=66 FAIL_CONTROLS=0`，`color-scheme` 与 `data-theme` 逐页一致
+
+**观感确认（逐张 `Image.View`，不是只看路径）**
+
+320 页头特写、320 触感面板、390 全页五分段、360 首屏与快捷入口、320/390/1440 三个宽度的色槽特写 —— 逐张确认：页头四个元素全部落在 320 视口内且有右侧留白；触感面板控件纵向堆叠、旋钮完整不再被裁；滑块不再贴左边缘；概览卡片右列完整；活动列表每条都收在边框内、长标题以省略号截断；色槽在 320/390 为 3+2 两行、十六进制值完整，1440 为一行五列且与改前一致。
+
+**一处异常读数及处理**
+
+改完页头源码后第一次跑探针，320 档报 `knobBoxW=300`（桌面尺寸），而 340/360/375/390 都是 210。同一脚本同一顺序、此前 320 档报的也是 210。连续重跑两次（换端口 9505），两次都是 210。
+
+判断：dev server 重新编译期间首屏未完成 hydration，`useSyncExternalStore` 仍返回 server snapshot 的 `false`，于是画的是桌面尺寸；探针在编译窗口内采样，采到了这个瞬时态。结论有两次重复测量支撑，不是产品缺陷。**但这也说明一件事：在 dev server 上取瞬时测量值必须先确认 hydration 已完成，否则会把编译竞态当成布局缺陷。**
+
+### 6. 未覆盖
+
+- 未测真机（iOS Safari / Android Chrome）。全部测量走 CDP 的 `Emulation.setDeviceMetricsOverride`，与真实设备在 `dvh`、地址栏收缩、字体度量上可能有差异。页头留了 `flex-wrap` 兜底正是针对字体度量差异。
+- 未测 Firefox / Safari。
+- 未测横屏与平板中间宽度（415–479、481–639）。
+- `--shell` 日间 `shell/canvas = 1.32`、`cream` 的 `cap/canvas = 1.08` 仍是 D-37 记录在案的遗留项，本轮未动。
+- `.tag-chip` 选中态、`--line` / `--grid` 叠色后对比度仍未计算（D-33 遗留）。
+- `config/site.ts` 的 `/feed.xml` 与真实路由 `/rss.xml` 不一致（实测 404 vs 200），与本轮无关，未在本轮改动。
+
+### 7. 一条值得记住的结论
+
+**验证方法本身会失效，而且失效时不会报错。**
+
+D-37 在 390px 下测出 `hscroll=false` 就收工了，用户却在真机上看到布局错乱。复盘时发现两个独立漏洞：`overflow: hidden` 让「容器内溢出」不产生任何滚动条；`+1` 容差让 391 对 390 的 1px 真实溢出被判为正常。两条叠加，检查表全是绿灯，缺陷一个不少。
+
+这和 D-37 记下的「回归守卫自己也可能失效」是同一类错误，但这次更隐蔽 —— 上一次是守卫的**输入**过期（拿旧版本比旧版本必然全等），这一次是守卫的**观测量**选错了（页面级滚动条根本看不见元素级裁切）。
+
+由此得到两条可复用的规则：
+
+1. **审计的观测量必须与被测对象的失效方式匹配。** 「溢出」有两种：撑破视口（会产生滚动条）和被祖先裁切（不会）。只测前者，等于对后者完全不设防。这也是本项目第二次遇到「审计维度没有按对象种类枚举」的问题 —— 第一次是侧壁（`base/canvas`）既不是文本、也不是控件自身背景，因此在前几轮全员零失败的情况下一直没人量它。
+2. **容差必须小于你要检测的最小缺陷。** `+1` 容差能滤掉亚像素抖动，但 1px 的整页位移是真实缺陷。当容差与最小缺陷同量级时，检查就失去了分辨力 —— 而它不会告诉你这件事。
+
+顺带记下一条操作纪律：**在 dev server 上取瞬时测量值，必须先把「编译竞态」和「产品缺陷」分开。** 本轮就出现过一次 `knobBoxW=300` 的假警报，靠连续两次重跑排除。做法是固定的：同一测量重复两次，一致才采信。

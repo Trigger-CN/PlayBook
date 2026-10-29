@@ -199,7 +199,7 @@ export function PaletteLab({ initialColors, presets }: PaletteLabProps) {
         </div>
 
         {/* ---- 5 个色槽 ---- */}
-        <div role="group" aria-label="选择要调整的主题色" className="mt-5 grid grid-cols-5 gap-2">
+        <div role="group" aria-label="选择要调整的主题色" className="mt-5 grid grid-cols-3 gap-2 min-[480px]:grid-cols-5">
           {colors.map((color, index) => {
             const isSelected = index === selected
             // 标签写在用户选的颜色上。第 4、5 个槽位通常是深中性色，
