@@ -70,6 +70,8 @@ export default async function PostDetailPage({ params }: { params: Params }) {
   const relatedPosts = related.items.filter((item) => item.slug !== frontmatter.slug).slice(0, 2)
   const showUpdated =
     frontmatter.updatedAt && frontmatter.updatedAt !== frontmatter.publishedAt
+  // 目录为空时不给右列留位，否则文章会白空 220px（见下方阅读区注释）。
+  const hasToc = toc.length > 0
 
   return (
     <article>
@@ -80,7 +82,8 @@ export default async function PostDetailPage({ params }: { params: Params }) {
         <span className="text-[var(--ink)]">{frontmatter.title}</span>
       </nav>
 
-      <header className="max-w-[760px] pt-5">
+      {/* 标题块原来写的是 max-w-[760px]：正文拉满后再限制它，标题与正文的右缘就会错开。 */}
+      <header className="pt-5">
         <div className="flex flex-wrap items-center gap-2.5 text-[13px] font-bold text-[var(--muted)]">
           {frontmatter.category ? (
             <Link
@@ -103,7 +106,32 @@ export default async function PostDetailPage({ params }: { params: Params }) {
         </p>
       </header>
 
-      <div className="mt-8 grid gap-7 lg:grid-cols-[minmax(0,720px)_220px] lg:items-start lg:justify-center">
+      {/*
+       * 阅读区（D-36）：左右边界与页头页脚对齐。
+       *
+       * 旧值是 `minmax(0,720px) 220px` + `justify-center`：720+28+220=968px 被居中
+       * 放进 1180px 的 .page-shell 里，于是正文左边缘比页头右移 106px、右边缘左移
+       * 354px（1440 视口实测值）；正文与它自己的标题块（左缘 130px）也不在一条线上。
+       *
+       * 现在正文列吃满剩余宽度（minmax(0,1fr)）：正文左缘 = 标题左缘 = 页头左缘，
+       * 目录右缘 = 页头右缘，中间不再有 `justify-*` 留下的死空。
+       *
+       * minmax(0,…) 而不是 1fr：正文里有 pre / table / 长 URL，不加 0 下限时
+       * 网格轨道会被内容顶宽，导致页面级横向溢出。
+       *
+       * 目录列是**有条件的**：toc 为空时文章不能白白空出 220px 的右列
+       * （实测 /posts/pan 就因此仍然左窄右空，正文 932px 但右缘差 248px）。
+       *
+       * 为何不给单列加 `max-w` 限制：设计文档 03-post-detail 的 680~760px
+       * 是「正文推荐宽度」，而用户明确要求宽度与页头页脚一致。两者冲突时，
+       * 以用户当轮指令为准；可读性靠 1.85 行高与大字号保证（见 MermaidRoot 的
+       * `leading-[1.85]`）。
+       */}
+      <div
+        className={`mt-8 grid gap-7 lg:items-start ${
+          hasToc ? 'lg:grid-cols-[minmax(0,1fr)_220px]' : 'lg:grid-cols-1'
+        }`}
+      >
         <div className="min-w-0">
           {frontmatter.cover ? (
             <figure className="mb-7">
